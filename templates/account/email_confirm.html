@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>Email Verification</h1>
+  {% if confirmation %}
+    <p>Hi {{ confirmation.email_address.user.username }},</p>
+    <p>Your email <strong>{{ confirmation.email_address.email }}</strong> has been verified successfully.</p>
+    <a href="http://localhost:5173/signin">Go to Login</a>
+  {% else %}
+    <p>Invalid or expired link.</p>
+  {% endif %}
+{% endblock %}
