@@ -54,10 +54,11 @@ INSTALLED_APPS = [
     'allauth.account',
     'allauth.socialaccount',
     'allauth.socialaccount.providers.google',  # your provider
-    
     'corsheaders', 
     'userProfile',
     'yatra_auth',
+    'yatra',
+    'payment',
 ]
 SITE_ID = 1
 

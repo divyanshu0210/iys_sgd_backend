@@ -1,5 +1,5 @@
 from django.http import JsonResponse
-from allauth.account.views import ConfirmEmailView
+from allauth.account.views import ConfirmEmailView # type: ignore
 
 
 from django.shortcuts import redirect
