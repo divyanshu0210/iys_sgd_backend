@@ -12,7 +12,7 @@ urlpatterns = [
         UploadPaymentScreenshotView.as_view(),
         name='upload-payment-screenshot'
     ),
-      path("verify-payment/", verify_payment, name="verify-payment"),
+      # path("verify-payment/", verify_payment, name="verify-payment"),
 
 
 
