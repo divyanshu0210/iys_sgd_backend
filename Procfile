@@ -1,2 +1,1 @@
-#  python manage.py migrate && python manage.py collectstatic --noinput && gunicorn iys_sgd_backend.wsgi --log-file -
-web: python manage.py collectstatic --noinput && python manage.py migrate  && python manage.py shell -c "import create_superuser; create_superuser.run()" && gunicorn iys_sgd_backend.wsgi --log-file -
+web: python manage.py migrate && python manage.py collectstatic --noinput && gunicorn iys_sgd_backend.wsgi --log-file -
