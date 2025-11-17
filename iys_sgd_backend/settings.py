@@ -76,6 +76,11 @@ CORS_ALLOWED_ORIGINS = config(
     default="http://localhost:5173",
     cast=lambda v: [o.strip() for o in v.split(",")]
 )
+CSRF_TRUSTED_ORIGINS = config(
+    "CSRF_TRUSTED_ORIGINS",
+    default="http://localhost:8000",
+    cast=lambda v: [o.strip() for o in v.split(",")]
+)
 
 
 MIDDLEWARE = [
