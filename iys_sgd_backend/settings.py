@@ -113,13 +113,19 @@ WSGI_APPLICATION = 'iys_sgd_backend.wsgi.application'
 
 
 
+import os
+
 DATABASES = {
-    "default": dj_database_url.config(
-        default="sqlite:///" + os.path.join(BASE_DIR, "db.sqlite3"),
-        conn_max_age=600,
-        engine="django.db.backends.mysql",   # ← this is the only change you need
-    )
+    'default': {
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': os.environ.get('MYSQL_DB'),
+        'USER': os.environ.get('MYSQL_USER'),
+        'PASSWORD': os.environ.get('MYSQL_PASSWORD'),
+        'HOST': os.environ.get('MYSQL_HOST'),
+        'PORT': os.environ.get('MYSQL_PORT', '3306'),
+    }
 }
+
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
