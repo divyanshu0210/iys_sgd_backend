@@ -149,8 +149,6 @@ class UploadPaymentScreenshotView(APIView):
         })
 
 
-
-@csrf_exempt
 @csrf_exempt
 def verify_payment(request):
     if request.method != "POST":
@@ -166,7 +164,7 @@ def verify_payment(request):
         return JsonResponse({"error": "amount missing"}, status=400)
 
     try:
-        expected_amount = float(expected_amount)
+        expected_amount_float = float(expected_amount.replace(",", ""))
     except:
         return JsonResponse({"error": "invalid amount"}, status=400)
 
@@ -174,40 +172,55 @@ def verify_payment(request):
     engine = RapidOCR()
     image_bytes = image.read()
     result = engine(image_bytes)
-    print(result)
-    extracted_text = ""
-    if isinstance(result, list):
-        for item in result:
-            if len(item) >= 2:
-                extracted_text += " " + item[1]  # Get the text portion
-    extracted_text = extracted_text.lower()
 
-    # Debug: print OCR text
+    # ------ CORRECT WAY TO READ TEXT FROM RapidOCROutput ------
+    extracted_text = " ".join(result.txts)
     print("OCR TEXT:", extracted_text)
 
-    found_amounts = re.findall(r"\d+\.\d{1,2}", extracted_text)
-    found_amounts += re.findall(r"\b\d+\b", extracted_text)  # also match integer amounts
+    # Normalize text
+    normalized_text = extracted_text.lower().replace(",", "").replace(" ", "")
+    amount_str = expected_amount.replace(",", "")
 
-    found_amounts = [float(x) for x in found_amounts]
+    # ------ PAYMENT KEYWORDS ------
+    payment_keywords = [
+        "completed", "success", "successful", "payment", "paymentsuccessful",
+        "moneysent", "sent", "yousent", "youpayed", "paid", "paidto",
+        "credited", "debited", "received", "paymentdone",
+        "upi", "upiid", "upitransactionid", "upitransaction",
+        "refno", "referenceid", "transactionid", "txn", "txnid", "ref",
+        "googlepay", "gpay", "paytm", "phonepe", "bhim", "poweredbyupi",
+        "from:", "to:", "sentto",
+        "sbi", "hdfc", "icici", "axis", "kotak"
+    ]
 
-    print("FOUND AMOUNTS:", found_amounts)
+    has_keyword = any(kw in normalized_text for kw in payment_keywords)
 
-    if len(found_amounts) == 0:
+    # ------ EXACT AMOUNT MATCH ------
+    amount_patterns = set([
+        amount_str,                            # 20000
+        f"{expected_amount_float:.2f}",        # 20000.00
+        f"{expected_amount_float:.0f}",        # 20000
+    ])
+
+    found_amount = any(a in normalized_text for a in amount_patterns)
+
+    print("Amount patterns:", amount_patterns)
+    print("Keyword found:", has_keyword)
+    print("Amount match:", found_amount)
+
+    if not found_amount:
         return JsonResponse({
             "success": False,
-            "message": "No amount detected"
+            "message": f"Amount mismatch. Expected amount ₹{expected_amount}."
         })
-
-    # match amount exactly
-    if amount in found_amounts:
+    
+    if not has_keyword:
         return JsonResponse({
-            "success": True,
-            "message": "Payment screenshot appears valid",
-            "extracted_amounts": found_amounts
+            "success": False,
+            "message": "Screenshot must contain UPI TransactionId/Reference No."
         })
 
     return JsonResponse({
-        "success": False,
-        "message": "Amount does NOT match screenshot",
-        "extracted_amounts": found_amounts
+        "success": True,
+        "message": "Screenshot is valid to submit."
     })
