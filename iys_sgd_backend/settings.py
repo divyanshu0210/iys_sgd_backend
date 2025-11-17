@@ -27,6 +27,7 @@ SECRET_KEY = config("SECRET_KEY")
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DEBUG", "False") == "True"
+IS_DEBUG = DEBUG is True
 
 ALLOWED_HOSTS = config(
     "ALLOWED_HOSTS",
@@ -118,12 +119,22 @@ WSGI_APPLICATION = 'iys_sgd_backend.wsgi.application'
 
 
 
-DATABASE_URL = config("DATABASE_URL", default=None)
-DATABASES = {
-        'default': dj_database_url.config(
+if IS_DEBUG:
+    # Use LOCAL SQLite or local MySQL (Whichever you want)
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
+    }
+else:
+    # Use Railway MySQL in production
+    DATABASE_URL = config("DATABASE_URL", default=None)
+    DATABASES = {
+        "default": dj_database_url.config(
             default=DATABASE_URL,
             conn_max_age=600,
-            ssl_require=False  # MySQL on Railway does NOT require strict SSL
+            ssl_require=False   # Railway MySQL doesn't require strict SSL
         )
     }
 
@@ -163,7 +174,11 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / "staticfiles"
-STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+
+if DEBUG:
+    STATICFILES_STORAGE = "django.contrib.staticfiles.storage.StaticFilesStorage"
+else:
+    STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
