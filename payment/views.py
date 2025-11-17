@@ -15,6 +15,11 @@ import qrcode # type: ignore
 from io import BytesIO
 from django.http import HttpResponse
 import logging
+import re
+from rest_framework.decorators import api_view
+from rapidocr import RapidOCR
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
 
 
 
@@ -142,3 +147,67 @@ class UploadPaymentScreenshotView(APIView):
             "message": "Screenshot uploaded successfully.",
             "proof_url": request.build_absolute_uri(payment.proof.url)
         })
+
+
+
+@csrf_exempt
+@csrf_exempt
+def verify_payment(request):
+    if request.method != "POST":
+        return JsonResponse({"error": "POST only"}, status=400)
+
+    if "file" not in request.FILES:
+        return JsonResponse({"error": "file missing"}, status=400)
+
+    image = request.FILES["file"]
+    expected_amount = request.POST.get("amount")
+
+    if not expected_amount:
+        return JsonResponse({"error": "amount missing"}, status=400)
+
+    try:
+        expected_amount = float(expected_amount)
+    except:
+        return JsonResponse({"error": "invalid amount"}, status=400)
+
+    # --- OCR ---
+    engine = RapidOCR()
+    image_bytes = image.read()
+    result = engine(image_bytes)
+    print(result)
+    extracted_text = ""
+    if isinstance(result, list):
+        for item in result:
+            if len(item) >= 2:
+                extracted_text += " " + item[1]  # Get the text portion
+    extracted_text = extracted_text.lower()
+
+    # Debug: print OCR text
+    print("OCR TEXT:", extracted_text)
+
+    found_amounts = re.findall(r"\d+\.\d{1,2}", extracted_text)
+    found_amounts += re.findall(r"\b\d+\b", extracted_text)  # also match integer amounts
+
+    found_amounts = [float(x) for x in found_amounts]
+
+    print("FOUND AMOUNTS:", found_amounts)
+
+    if len(found_amounts) == 0:
+        return JsonResponse({
+            "success": False,
+            "message": "No amount detected"
+        })
+
+    # match amount exactly
+    if amount in found_amounts:
+        return JsonResponse({
+            "success": True,
+            "message": "Payment screenshot appears valid",
+            "extracted_amounts": found_amounts
+        })
+
+    return JsonResponse({
+        "success": False,
+        "message": "Amount does NOT match screenshot",
+        "extracted_amounts": found_amounts
+    })
