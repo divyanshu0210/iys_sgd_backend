@@ -223,7 +223,7 @@ ACCOUNT_SIGNUP_FIELDS = {
     "password2": {"required": True},
 }
 ACCOUNT_LOGIN_METHODS ={ 'email'}
-ACCOUNT_EMAIL_VERIFICATION = 'mandatory'
+ACCOUNT_EMAIL_VERIFICATION = 'none'
 ACCOUNT_CONFIRM_EMAIL_ON_GET = True
 
 
