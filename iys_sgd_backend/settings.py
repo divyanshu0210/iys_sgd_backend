@@ -214,11 +214,18 @@ DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 # ACCOUNT_EMAIL_REQUIRED = True
 # ACCOUNT_USERNAME_REQUIRED = False
 # ACCOUNT_AUTHENTICATION_METHOD = 'email'
-ACCOUNT_SIGNUP_FIELDS =[ 'email*', 'password1*', 'password2*']
+# ACCOUNT_SIGNUP_FIELDS =[ 'email*', 'password1*', 'password2*']
+# ACCOUNT_USER_MODEL_USERNAME_FIELD = 'username'
+ACCOUNT_SIGNUP_FIELDS = {
+    "username": {"required": False},
+    "email*": {"required": True},
+    "password1": {"required": True},
+    "password2": {"required": True},
+}
 ACCOUNT_LOGIN_METHODS ={ 'email'}
 ACCOUNT_EMAIL_VERIFICATION = 'mandatory'
 ACCOUNT_CONFIRM_EMAIL_ON_GET = True
-# ACCOUNT_USER_MODEL_USERNAME_FIELD = 'username'
+
 
 
 FRONTEND_BASE_URL = config("FRONTEND_BASE_URL")
