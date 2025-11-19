@@ -1,6 +1,5 @@
 FROM python:3.11-slim
 
-# Install system libs needed for OpenCV + ONNX + RapidOCR
 RUN apt-get update && apt-get install -y \
     libgl1 \
     libglib2.0-0 \
@@ -11,11 +10,9 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Install dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy project files
 COPY . .
 
-# Railway will still pick your Procfile, so no CMD needed
+CMD ["sh", "-c", "python manage.py migrate && python manage.py collectstatic --noinput && gunicorn iys_sgd_backend.wsgi:application --bind 0.0.0.0:8000"]
