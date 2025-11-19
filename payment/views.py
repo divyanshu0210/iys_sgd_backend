@@ -148,6 +148,7 @@ class UploadPaymentScreenshotView(APIView):
             "proof_url": request.build_absolute_uri(payment.proof.url)
         })
 
+engine = RapidOCR(det_model_path=None, cls_model_path=None)
 
 @csrf_exempt
 def verify_payment(request):
@@ -169,7 +170,6 @@ def verify_payment(request):
         return JsonResponse({"error": "invalid amount"}, status=400)
 
     # --- OCR ---
-    engine = RapidOCR()
     image_bytes = image.read()
     res, _ = engine(image_bytes)
     print(res)
