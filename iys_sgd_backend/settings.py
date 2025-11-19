@@ -4,6 +4,9 @@ from pathlib import Path
 import dj_database_url
 from decouple import config
 
+import pymysql
+pymysql.install_as_MySQLdb()
+
 
 try:
     from decouple import config
@@ -208,7 +211,7 @@ EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER ="iysgovinddhamdb@gmail.com"
-EMAIL_HOST_PASSWORD ="zbqh omaw qkfq tvct"
+EMAIL_HOST_PASSWORD =config("EMAIL_HOST_PASSWORD")
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
 # ACCOUNT_EMAIL_REQUIRED = True
