@@ -1,6 +1,7 @@
 # userProfile/adapters.py
 from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
 from django.contrib.auth import get_user_model
+from django.core.exceptions import PermissionDenied
 
 User = get_user_model()
 
@@ -19,4 +20,7 @@ class MySocialAccountAdapter(DefaultSocialAccountAdapter):
             # connect this social account to existing user
             sociallogin.connect(request, user)
         except User.DoesNotExist:
-            pass  # new user → normal flow
+            # pass  # new user → normal flow
+            raise PermissionDenied(
+                "Account doesn’t exist. Sign up to create a new account."
+            )
