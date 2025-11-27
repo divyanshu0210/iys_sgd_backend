@@ -6,7 +6,7 @@ from rest_framework import serializers
 
 class PaymentSerializer(serializers.ModelSerializer):
     uploaded_by = serializers.StringRelatedField()
-    verified_by = serializers.StringRelatedField()
+    processed_by = serializers.StringRelatedField()
 
     class Meta:
         model = Payment
@@ -17,9 +17,9 @@ class PaymentSerializer(serializers.ModelSerializer):
             'proof',
             'uploaded_by',
             'uploaded_at',
-            'is_verified',
-            'verified_by',
-            'verified_at',
+            'status',
+            'processed_by',
+            'processed_at',
             'notes',
         ]
 

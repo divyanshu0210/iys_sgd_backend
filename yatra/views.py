@@ -394,6 +394,8 @@ class YatraRegistrationView(APIView):
                     if reg_inst:
                         if reg_inst.is_paid:
                             tag = "verified"
+                        elif reg_inst.payment and reg_inst.verified_by:
+                            tag = reg_inst.payment.status
                         elif reg_inst.payment and not reg_inst.verified_by:
                             tag = "verification pending"
                         else:
