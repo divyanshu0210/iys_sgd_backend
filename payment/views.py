@@ -110,7 +110,10 @@ class BatchPaymentProofView(APIView):
                     installment=inst,
                 )
                 reg_inst.payment = payment
+                reg_inst.verified_by = None
+                reg_inst.verified_at = None
                 reg_inst.save()
+                reg_inst.registration.update_status()
                 linked_count += 1
                 logger.info(
                     f"Linked installment '{inst.label}' (₹{inst.amount}) "

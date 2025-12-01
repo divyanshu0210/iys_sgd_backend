@@ -121,15 +121,17 @@ class YatraRegistration(models.Model):
     def update_status(self):
         """Update registration status based on payments"""
         total_installments = self.yatra.installments.count()
+
         paid_installments = self.installments.filter(is_paid=True).count()
-        
-        if paid_installments == 0:
+        initiated_installments = self.installments.filter(payment__isnull=False).count()
+        if initiated_installments == 0:
             self.status = 'pending'
         elif paid_installments == total_installments:
             self.status = 'paid'
         else:
             self.status = 'partial'
         self.save()
+
 
 
 
