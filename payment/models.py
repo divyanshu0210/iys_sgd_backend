@@ -89,20 +89,12 @@ class Payment(models.Model):
             inst.save()
             inst.registration.update_status()
         
+    
+    def has_add_permission(self, request):
+        return False
 
-    # def mark_verified(self, verifier_profile, notes=""):
-    #     if not self.is_verified:
-    #         self.is_verified = True
-    #         self.verified_by = verifier_profile
-    #         self.verified_at = timezone.now()
-    #         self.notes = notes
-    #         self.save()
-            
-    #         # Mark all associated installments as paid
-    #         for installment in self.installments.all():
-    #             installment.is_paid = True
-    #             installment.paid_at = timezone.now() # type: ignore
-    #             installment.verified_by = verifier_profile
-    #             installment.verified_at = timezone.now()
-    #             installment.save()
-    #             installment.registration.update_status()
+    # Optional: also hide from change/view pages of related models
+    def has_module_permission(self, request):
+        return True  # Still show in admin menu
+
+    

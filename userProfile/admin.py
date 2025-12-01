@@ -77,6 +77,15 @@ class ProfileAdmin(admin.ModelAdmin):
         return f"{obj.member_id:06d}"
     formatted_member_id.short_description = "Member ID"
 
+    
+    def has_add_permission(self, request):
+        return False
+
+    # Optional: also hide from change/view pages of related models
+    def has_module_permission(self, request):
+        return True  # Still show in admin menu
+
+
 
 # ✅ NEW: Mentor Request Admin
 @admin.register(MentorRequest)
@@ -90,4 +99,12 @@ class MentorRequestAdmin(admin.ModelAdmin):
     )
     list_filter = ('is_approved', 'created_at')
     ordering = ('-created_at',)
+
+    
+    def has_add_permission(self, request):
+        return False
+
+    # Optional: also hide from change/view pages of related models
+    def has_module_permission(self, request):
+        return True  # Still show in admin menu
 
