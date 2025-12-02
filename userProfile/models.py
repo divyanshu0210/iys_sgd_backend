@@ -1,3 +1,4 @@
+from django.utils import timezone
 from django.db import models, transaction
 import uuid
 from django.contrib.auth.models import User
@@ -117,9 +118,15 @@ class MentorRequest(models.Model):
     to_mentor = models.ForeignKey('Profile', related_name='received_requests', on_delete=models.CASCADE)
     message = models.TextField(blank=True, null=True)
     is_approved = models.BooleanField(default=False)
+    approved_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return f"{self.from_user} → {self.to_mentor}"
+    
+    def save(self, *args, **kwargs):
+        if self.is_approved and self.approved_at is None:
+            self.approved_at = timezone.now()
+        super().save(*args, **kwargs)
     
 

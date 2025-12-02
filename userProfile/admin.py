@@ -87,17 +87,16 @@ class ProfileAdmin(admin.ModelAdmin):
 
 
 
-# ✅ NEW: Mentor Request Admin
 @admin.register(MentorRequest)
 class MentorRequestAdmin(admin.ModelAdmin):
-    list_display = ('id','from_user', 'to_mentor', 'is_approved', 'created_at')
+    list_display = ('id','from_user', 'to_mentor', 'is_approved','approved_at','created_at')
     search_fields = (
         'from_user__first_name',
         'to_mentor__first_name',
         'from_user__member_id',
         'to_mentor__member_id',
     )
-    list_filter = ('is_approved', 'created_at')
+    list_filter = ('is_approved', 'created_at','approved_at')
     ordering = ('-created_at',)
 
     

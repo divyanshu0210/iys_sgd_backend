@@ -8,6 +8,7 @@ from rest_framework.permissions import IsAdminUser, AllowAny, IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.core.mail import send_mail
 from django.conf import settings
+from django.utils import timezone
 
 # models.py
 # ✅ Get base URL from settings
@@ -199,6 +200,7 @@ class MentorRequestView(APIView):
         # Assign mentee officially
         mentee = req.from_user
         mentee.mentor = mentor_profile
+        mentee.user_type = 'devotee'  # Update user_type to 'devotee'
         mentee.save()
 
         # ✅ Send email notification to mentee
@@ -243,7 +245,8 @@ class MentorRequestView(APIView):
         # -----------------------------------------------------------------
         if mentee.mentor == mentor_profile:
             mentee.mentor = None
-            mentee.save(update_fields=["mentor"])
+            mentee.user_type = 'guest'  # Revert user_type to 'seeker'
+            mentee.save(update_fields=["mentor", "user_type"])
 
         # Delete request
         req.delete()

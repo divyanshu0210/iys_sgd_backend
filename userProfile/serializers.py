@@ -28,6 +28,7 @@ class ProfileSerializer(serializers.ModelSerializer):
     profile_picture_url = serializers.SerializerMethodField()
     email = serializers.SerializerMethodField()
     is_profile_approved = serializers.SerializerMethodField()
+    profile_approved_at = serializers.SerializerMethodField()
     mentor = MentorField(required=False, allow_null=True)  # ✅ use our custom field
 
     class Meta:
@@ -62,6 +63,7 @@ class ProfileSerializer(serializers.ModelSerializer):
             'no_of_chanting_rounds',
             'created_at',
             'is_profile_approved',
+            'profile_approved_at',
         ]
 
     def get_full_name(self, obj):
@@ -85,5 +87,25 @@ class ProfileSerializer(serializers.ModelSerializer):
             )
         except:
             return False
+        
+    def get_profile_approved_at(self, obj):
+    # Case 1: someone approved this user as a mentee
+        received = obj.received_requests.filter(
+            is_approved=True
+        ).order_by("-approved_at").first()
+
+        # Case 2: this user was approved by someone else
+        sent = obj.sent_requests.filter(
+            is_approved=True
+        ).order_by("-approved_at").first()
+
+        # Case 3: if user is a mentor, they are automatically approved from creation
+        # if obj.user_type == 'mentor':
+        #     return obj.created_at
+
+        # Pick the most recent approval
+        req = received or sent
+        return req.approved_at if req else None
+
 
 

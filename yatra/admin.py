@@ -47,6 +47,7 @@ class YatraRegistrationAdmin(admin.ModelAdmin):
         'yatra',
         'registered_for',
         'registered_by',
+        'mentor_full_name',
         'status',
         'total_amount_display',
         'paid_amount_display',
@@ -85,6 +86,15 @@ class YatraRegistrationAdmin(admin.ModelAdmin):
         return " • ".join(items) if items else "No installments defined"
 
     installments_status.short_description = "Installment Status"
+
+    def mentor_full_name(self, obj):
+        """Return mentor full name of the person who is registered_for."""
+        if obj.registered_for and obj.registered_for.mentor:
+            first = obj.registered_for.mentor.first_name or ""
+            last = obj.registered_for.mentor.last_name or ""
+            return f"{first} {last}".strip()
+        return "-"
+    mentor_full_name.short_description = "Mentor Name"
 
     def has_add_permission(self, request):
         return False

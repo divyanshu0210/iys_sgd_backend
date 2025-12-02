@@ -99,6 +99,7 @@ MIDDLEWARE = [
     'allauth.account.middleware.AccountMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    "iys_sgd_backend.middleware.close_db.CloseDBConnectionMiddleware",
 ]
 
 ROOT_URLCONF = 'iys_sgd_backend.urls'
@@ -140,6 +141,8 @@ else:
             ssl_require=False   # Railway MySQL doesn't require strict SSL
         )
     }
+
+
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
