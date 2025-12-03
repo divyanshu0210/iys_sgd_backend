@@ -99,7 +99,6 @@ MIDDLEWARE = [
     'allauth.account.middleware.AccountMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    "iys_sgd_backend.middleware.close_db.CloseDBConnectionMiddleware",
 ]
 
 ROOT_URLCONF = 'iys_sgd_backend.urls'

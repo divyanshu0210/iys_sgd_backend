@@ -77,12 +77,43 @@ class YatraRegistrationAdmin(admin.ModelAdmin):
     paid_amount_display.admin_order_field = 'paid_amount'
 
     # No admin_order_field here unless you add a custom annotation in get_queryset()
+    # def installments_status(self, obj):
+    #     items = []
+    #     for reg_inst in obj.installments.select_related('installment').order_by('installment__order'):
+    #         label = reg_inst.installment.label if reg_inst.installment else "Unknown"
+    #         status = "Paid" if reg_inst.is_paid else "Pending"
+    #         items.append(f"{label} ({status})")
+    #     return " • ".join(items) if items else "No installments defined"
+
+    # installments_status.short_description = "Installment Status"
     def installments_status(self, obj):
+        """
+        Show status of all installments for this registration:
+        - Paid → "Paid"
+        - Verification Pending → "Verification Pending"
+        - Due → "Due"
+        """
         items = []
-        for reg_inst in obj.installments.select_related('installment').order_by('installment__order'):
-            label = reg_inst.installment.label if reg_inst.installment else "Unknown"
-            status = "Paid" if reg_inst.is_paid else "Pending"
-            items.append(f"{label} ({status})")
+
+        # Get all installments defined in Yatra
+        all_yatra_installments = obj.yatra.installments.all().order_by('order')
+
+        for inst in all_yatra_installments:
+            # Try to get registration installment
+            reg_inst = obj.installments.filter(installment=inst).first()
+
+            if reg_inst:
+                if reg_inst.is_paid:
+                    status = "Paid"
+                elif reg_inst.payment and not reg_inst.is_paid:
+                    status = "Verification Pending"
+                else:
+                    status = "Due"
+            else:
+                status = "Due"  # Installment not yet created
+
+            items.append(f"{inst.label} ({status})")
+
         return " • ".join(items) if items else "No installments defined"
 
     installments_status.short_description = "Installment Status"
