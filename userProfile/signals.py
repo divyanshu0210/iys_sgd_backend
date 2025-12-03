@@ -3,7 +3,7 @@ from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.contrib.auth.models import User
 from django.db import transaction
-from .models import Profile
+from .models import *
 
 @receiver(post_save, sender=User)
 def create_or_update_user_profile(sender, instance, created, **kwargs):
@@ -23,3 +23,36 @@ def create_or_update_user_profile(sender, instance, created, **kwargs):
             instance.profile.save()
         except Profile.DoesNotExist:
             Profile.objects.create(user=instance, username=instance.username)
+
+
+
+from django.db.models.signals import pre_save
+from django.dispatch import receiver
+from .models import MentorRequest
+
+@receiver(pre_save, sender=MentorRequest)
+def update_mentee_on_approval(sender, instance, **kwargs):
+    """
+    Update mentee's profile when a MentorRequest is approved or unapproved.
+    Works for both API and admin changes.
+    """
+    if not instance.pk:
+        # New request, nothing to do yet
+        return
+
+    # Get existing state from DB
+    previous = MentorRequest.objects.get(pk=instance.pk)
+    mentee = instance.from_user
+
+    # Approved now (changed from False -> True)
+    if not previous.is_approved and instance.is_approved:
+        mentee.mentor = instance.to_mentor
+        mentee.user_type = 'devotee'
+        mentee.save(update_fields=['mentor', 'user_type'])
+
+    # Unapproved now (changed from True -> False)
+    elif previous.is_approved and not instance.is_approved:
+        if mentee.mentor == instance.to_mentor:
+            mentee.mentor = None
+            mentee.user_type = 'guest'
+            mentee.save(update_fields=['mentor', 'user_type'])

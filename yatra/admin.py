@@ -1,6 +1,21 @@
 from django.contrib import admin
-from .models import *
 
+from yatra.admin_views import yatra_bulk_offline_import
+from .models import *
+from django.urls import reverse
+from django.utils.html import format_html
+from django.shortcuts import get_object_or_404, redirect, render
+from django.contrib import messages
+from django.db import transaction
+from django.core.files.base import ContentFile
+from urllib.parse import urlparse
+from django.utils import timezone
+import os
+from payment.models import Payment
+from userProfile.models import Profile
+from django.urls import path
+from django.utils.html import format_html
+from django.urls import reverse
 # Register your models here.
 
 class YatraFormFieldInline(admin.TabularInline):
@@ -16,11 +31,31 @@ class YatraInstallmentInline(admin.TabularInline):
 
 @admin.register(Yatra)
 class YatraAdmin(admin.ModelAdmin):
-    list_display = ('id','title', 'location', 'start_date', 'end_date', 'capacity','payment_upi_id', 'created_at')
+    list_display = ('id','title', 'location', 'start_date', 'end_date', 'capacity','payment_upi_id', 'created_at','bulk_import_link')
     search_fields = ('title', 'location')
     list_filter = ('start_date', 'location')
     ordering = ('-created_at',)
     inlines = [YatraFormFieldInline, YatraInstallmentInline]
+
+    def bulk_import_link(self, obj):
+        if not obj.is_registration_open:
+            return "-"
+        url = reverse('admin:yatra_bulk_offline_import', args=[obj.id])
+        return format_html('<a href="{}" class="button">Bulk Offline Import</a>', url)
+    bulk_import_link.short_description = "Bulk Import"
+
+    def get_urls(self):
+        urls = super().get_urls()
+
+        custom_urls = [
+            path(
+                'bulk-offline-import/<uuid:yatra_id>/',
+                self.admin_site.admin_view(yatra_bulk_offline_import),
+                name='yatra_bulk_offline_import',
+            ),
+        ]
+        return custom_urls + urls
+
 
 
 # userProfile/admin.py (add this)
@@ -135,26 +170,26 @@ class YatraRegistrationAdmin(admin.ModelAdmin):
         return True  # Still show in admin menu
 
 
-# @admin.register(YatraRegistrationInstallment)
-# class YatraRegistrationInstallmentAdmin(admin.ModelAdmin):
+@admin.register(YatraRegistrationInstallment)
+class YatraRegistrationInstallmentAdmin(admin.ModelAdmin):
     
-#     list_display = (
-#         'registration', 
-#         'installment', 
-#         'payment',
-#         'is_paid', 
-#         'paid_at', 
-#         'verified_by',
-#         'verified_at'
-#     )
-#     list_filter = ('is_paid', 'paid_at', 'verified_at')
-#     search_fields = (
-#         'registration__registered_for__first_name',
-#         'registration__registered_for__last_name',
-#         'payment__transaction_id'
-#     )
-#     readonly_fields = ('paid_at',)
+    list_display = (
+        'registration', 
+        'installment', 
+        'payment',
+        'is_paid', 
+        'paid_at', 
+        'verified_by',
+        'verified_at'
+    )
+    list_filter = ('is_paid', 'paid_at', 'verified_at')
+    search_fields = (
+        'registration__registered_for__first_name',
+        'registration__registered_for__last_name',
+        'payment__transaction_id'
+    )
+    readonly_fields = ('paid_at',)
 
-#     def uploaded_at(self, obj):
-#         return obj.payment.uploaded_at if obj.payment else None
-#     uploaded_at.short_description = "Uploaded At"
+    def uploaded_at(self, obj):
+        return obj.payment.uploaded_at if obj.payment else None
+    uploaded_at.short_description = "Uploaded At"

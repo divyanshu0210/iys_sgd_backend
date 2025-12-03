@@ -1,0 +1,81 @@
+{% extends "admin/base_site.html" %}
+{% load yatra_extras %}  {# Your custom filter file — MUST match filename! #}
+
+{% block content %}
+<h1>{{ title }}</h1>
+<p><strong>{{ yatra.title }}</strong> • {{ yatra.location }} • {{ yatra.start_date }} to {{ yatra.end_date }}</p>
+<form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+
+    {% if not profile_excel_map %}
+        <div style="background:#e3f2fd;padding:15px;border:1px solid #ccc;margin-bottom:20px;">
+            <strong>Step 1: Upload Excel</strong><br>
+            <input type="file" name="excel_file" accept=".xlsx,.xls">
+            <button type="submit">Upload & Match</button>
+        </div>
+    {% else %}
+        <div style="background:#dff0d8;padding:15px;border:1px solid #ccc;margin-bottom:20px;">
+            Excel loaded! Review below.
+        </div>
+    {% endif %}
+    
+<table class="table table-striped" style="width:100%; border:1px solid #ddd;">
+    <thead>
+        <tr>
+            <th>Select</th>
+            <th>Name</th>
+            <th>Mobile</th>
+            <th>Status</th>
+            <th>Drive Screenshot URL</th>
+            <th>Paid Installments</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for profile in profiles %}
+            {% with excel=profile_excel_map|get_item:profile.pk %}
+            <tr {% if profile.id|stringformat:"s" in missing_profiles %}style="background:#ffdddd;"{% endif %}>
+                <td>{% if profile.id|stringformat:"s" not in registered_ids %}
+                    <input type="checkbox" name="profile" value="{{ profile.id }}">
+                    {% else %}Already Registered{% endif %}</td>
+                <td><strong>{{ profile.first_name }} {{ profile.last_name }}</strong> (#{{ profile.member_id }})</td>
+                <td>{{ profile.mobile|default:"No Mobile" }}</td>
+                <td>{% if profile.id|stringformat:"s" in eligible_ids %}Approved{% else %}Will Auto Approve{% endif %}</td>
+                <td><input type="text" name="drive_url_{{ profile.id }}" value="{{ excel.screenshot_url|default:'' }}" style="width:300px;" placeholder="Google Drive Link"></td>
+                   <td>
+    {% for inst in installments %}
+        <label style="display:block; margin:5px 0;">
+            <input type="checkbox"
+                   name="installment_{{ profile.id }}"
+                   value="{{ inst.label }}"
+                   {% if excel.payment_type %}
+                       {% if "3000 Advance" in excel.payment_type and inst.amount == 3000 %}
+                           checked
+                       {% elif "6500 Full Payment" in excel.payment_type %}
+                           {% if inst.amount == 3000 or inst.amount == 3500 or inst.amount == 6500 %}
+                               checked
+                           {% endif %}
+                       {% endif %}
+                   {% endif %}>
+            {{ inst.label }} – ₹{{ inst.amount }}
+        </label>
+    {% endfor %}
+                </td>
+            </tr>
+            {% endwith %}
+        {% endfor %}
+    </tbody>
+</table>
+
+<div style="margin-top:20px;">
+    <button type="submit" style="padding:10px 20px; background:green; color:white; border:none;">
+        Save Selected (Mark Paid/Verified)
+    </button>
+</div>
+
+{% if missing_profiles %}
+    <p style="color:red; margin-top:10px;">Skipped {{ missing_profiles|length }} profiles (missing data — see red rows).</p>
+{% endif %}
+{# Rest of template goes here #}
+</form>
+
+{% endblock %}
