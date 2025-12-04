@@ -41,8 +41,8 @@ class YatraAdmin(admin.ModelAdmin):
         if not obj.is_registration_open:
             return "-"
         url = reverse('admin:yatra_bulk_offline_import', args=[obj.id])
-        return format_html('<a href="{}" class="button">Bulk Offline Import</a>', url)
-    bulk_import_link.short_description = "Bulk Import"
+        return format_html('<a href="{}" class="button">Bulk Registrations</a>', url)
+    bulk_import_link.short_description = "Bulk Registeration"
 
     def get_urls(self):
         urls = super().get_urls()
@@ -170,26 +170,26 @@ class YatraRegistrationAdmin(admin.ModelAdmin):
         return True  # Still show in admin menu
 
 
-@admin.register(YatraRegistrationInstallment)
-class YatraRegistrationInstallmentAdmin(admin.ModelAdmin):
+# @admin.register(YatraRegistrationInstallment)
+# class YatraRegistrationInstallmentAdmin(admin.ModelAdmin):
     
-    list_display = (
-        'registration', 
-        'installment', 
-        'payment',
-        'is_paid', 
-        'paid_at', 
-        'verified_by',
-        'verified_at'
-    )
-    list_filter = ('is_paid', 'paid_at', 'verified_at')
-    search_fields = (
-        'registration__registered_for__first_name',
-        'registration__registered_for__last_name',
-        'payment__transaction_id'
-    )
-    readonly_fields = ('paid_at',)
+#     list_display = (
+#         'registration', 
+#         'installment', 
+#         'payment',
+#         'is_paid', 
+#         'paid_at', 
+#         'verified_by',
+#         'verified_at'
+#     )
+#     list_filter = ('is_paid', 'paid_at', 'verified_at')
+#     search_fields = (
+#         'registration__registered_for__first_name',
+#         'registration__registered_for__last_name',
+#         'payment__transaction_id'
+#     )
+#     readonly_fields = ('paid_at',)
 
-    def uploaded_at(self, obj):
-        return obj.payment.uploaded_at if obj.payment else None
-    uploaded_at.short_description = "Uploaded At"
+#     def uploaded_at(self, obj):
+#         return obj.payment.uploaded_at if obj.payment else None
+#     uploaded_at.short_description = "Uploaded At"

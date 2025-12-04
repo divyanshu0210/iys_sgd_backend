@@ -2,30 +2,64 @@
 {% load yatra_extras %}  {# Your custom filter file — MUST match filename! #}
 
 {% block content %}
-<h1>{{ title }}</h1>
+<div style="background:#f7f9fc; padding:10px 15px; border-left:4px solid #1976d2; margin-bottom:15px;">
+    <p style="margin:6px 0;"><strong>Step 1:</strong> Upload the Registration Excel file to auto-fill the data.</p>
+      <p style="margin:0px 0 0 0; color:#555; font-size: 13px;">
+        <strong>Note:</strong> Auto-fill is based on matching mobile numbers between the user profile and the Excel sheet.
+    </p>
+    <p style="margin:6px 0;"><strong>Step 2:</strong> Review and edit Drive Screenshot URLs and Installments.</p>
+    <p style="margin:6px 0;"><strong>Step 3:</strong> Select profiles and click <em>"Save Selected"</em> to mark them as Registered.</p>
+
+  
+</div>
+
+
 <p><strong>{{ yatra.title }}</strong> • {{ yatra.location }} • {{ yatra.start_date }} to {{ yatra.end_date }}</p>
 <form method="post" enctype="multipart/form-data">
-    {% csrf_token %}
+ {% csrf_token %}
+
+<div class="card" style="border:1px solid #d0d7de; border-radius:6px; padding:20px; margin-bottom:25px;">
 
     {% if not profile_excel_map %}
-        <div style="background:#e3f2fd;padding:15px;border:1px solid #ccc;margin-bottom:20px;">
-            <strong>Step 1: Upload Excel</strong><br>
-            <input type="file" name="excel_file" accept=".xlsx,.xls">
-            <button type="submit">Upload & Match</button>
+        <!-- <h3 style="margin-top:0;"> Upload Excel File</h3> -->
+        <p style="color:#555; margin-bottom:15px;">
+           <strong>Upload</strong> your Registration Excel file to automatically fill devotee data.
+        </p>
+
+        <div style="display:flex; align-items:center; gap:15px;">
+            <input type="file" name="excel_file" accept=".xlsx,.xls"
+                   class="vTextField"
+                   style="padding:8px; border-radius:4px; border:1px solid #ccc; width:260px;">
+            
+            <button type="submit" class="button btn btn-success">
+                Upload
+            </button>
         </div>
+
     {% else %}
-        <div style="background:#dff0d8;padding:15px;border:1px solid #ccc;margin-bottom:20px;">
-            Excel loaded! Review below.
+        <div style="
+            background:#e8f5e9;
+            border-left:5px solid #4caf50;
+            padding:15px 20px;
+            border-radius:4px;
+        ">
+            <strong>✔ Excel Loaded Successfully!</strong>
+            <p style="margin:6px 0 0; color:#397339;">
+                The data has been matched. Review below before saving.
+            </p>
         </div>
     {% endif %}
-    
+
+</div>
+
+
 <table class="table table-striped" style="width:100%; border:1px solid #ddd;">
     <thead>
         <tr>
             <th>Select</th>
             <th>Name</th>
             <th>Mobile</th>
-            <th>Status</th>
+            <th>Yatra Approval</th>
             <th>Drive Screenshot URL</th>
             <th>Paid Installments</th>
         </tr>
@@ -35,18 +69,19 @@
             {% with excel=profile_excel_map|get_item:profile.pk %}
             <tr {% if profile.id|stringformat:"s" in missing_profiles %}style="background:#ffdddd;"{% endif %}>
                 <td>{% if profile.id|stringformat:"s" not in registered_ids %}
-                    <input type="checkbox" name="profile" value="{{ profile.id }}">
+                    <input type="checkbox" class="profile-check" name="profile" value="{{ profile.id }}">
                     {% else %}Already Registered{% endif %}</td>
                 <td><strong>{{ profile.first_name }} {{ profile.last_name }}</strong> (#{{ profile.member_id }})</td>
                 <td>{{ profile.mobile|default:"No Mobile" }}</td>
                 <td>{% if profile.id|stringformat:"s" in eligible_ids %}Approved{% else %}Will Auto Approve{% endif %}</td>
-                <td><input type="text" name="drive_url_{{ profile.id }}" value="{{ excel.screenshot_url|default:'' }}" style="width:300px;" placeholder="Google Drive Link"></td>
+                <td><input type="text" name="drive_url_{{ profile.id }}" value="{{ excel.screenshot_url|default:'' }}" style="width:300px;" placeholder="Google Drive Link"  {% if profile.id|stringformat:"s" in registered_ids %}disabled{% endif %}></td>
                    <td>
     {% for inst in installments %}
         <label style="display:block; margin:5px 0;">
             <input type="checkbox"
                    name="installment_{{ profile.id }}"
                    value="{{ inst.label }}"
+                    {% if profile.id|stringformat:"s" in registered_ids %}disabled{% endif %}
                    {% if excel.payment_type %}
                        {% if "3000 Advance" in excel.payment_type and inst.amount == 3000 %}
                            checked
@@ -65,17 +100,61 @@
         {% endfor %}
     </tbody>
 </table>
+<div style="color:#555; margin-bottom:15px; margin-top:20px;">
+    <div style="margin-top:8px;">
+        <button type="submit"
+                id="submitBtn"
+                disabled
+                style="padding:10px 20px; background:gray; color:white; border:none; border-radius:4px;">
+           Register Selected Profiles
+        </button>
 
-<div style="margin-top:20px;">
-    <button type="submit" style="padding:10px 20px; background:green; color:white; border:none;">
-        Save Selected (Mark Paid/Verified)
-    </button>
+        <span style="margin-left:12px; font-weight:600;">Note:</span>
+        <span style="margin-left:6px;">Once Registered the profile cannot be registered again.</span>
+    </div>
 </div>
-
 {% if missing_profiles %}
     <p style="color:red; margin-top:10px;">Skipped {{ missing_profiles|length }} profiles (missing data — see red rows).</p>
 {% endif %}
 {# Rest of template goes here #}
 </form>
 
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    const submitBtn = document.getElementById("submitBtn");
+
+    // Defensive: if button not found, do nothing (prevents JS errors).
+    if (!submitBtn) return;
+
+    // Helper to update the button state
+    function updateButtonState() {
+        // Find current profile checkboxes (only the ones that are not "Already Registered")
+        const checkboxes = Array.from(document.querySelectorAll(".profile-check"));
+        const anyChecked = checkboxes.some(cb => cb.checked);
+        submitBtn.disabled = !anyChecked;
+        submitBtn.style.background = anyChecked ? "green" : "gray";
+        // also set cursor style for clarity
+        submitBtn.style.cursor = anyChecked ? "pointer" : "not-allowed";
+    }
+
+    // Delegated listener: works even if rows are modified client-side later
+    document.addEventListener("change", function(e) {
+        if (e.target && e.target.matches && e.target.matches(".profile-check")) {
+            updateButtonState();
+        }
+    });
+
+    // Also handle checkbox clicks (some browsers toggle before 'change' fires)
+    document.addEventListener("click", function(e) {
+        if (e.target && e.target.matches && e.target.matches(".profile-check")) {
+            // small timeout to let the checked state update
+            setTimeout(updateButtonState, 0);
+        }
+    });
+
+    // Initialize state on page load (handles pre-checked boxes)
+    updateButtonState();
+});
+</script>
 {% endblock %}

@@ -1,4 +1,5 @@
 # yatra/admin_views.py
+from io import BytesIO
 from django.shortcuts import get_object_or_404, redirect, render
 from django.contrib import messages
 from django.db import transaction
@@ -11,44 +12,78 @@ import openpyxl
 import re
 import requests
 
+def guess_extension_from_bytes(content):
+    import imghdr
+    ext = imghdr.what(None, h=content)
+    if ext:
+        return f".{ext}"  # jpg, jpeg, png, webp etc.
+    return ".bin"
 
 def download_drive_file(drive_url):
     """Download file from Google Drive public link (handles confirm page)"""
+    print(f"[DEBUG] Starting download for URL: {drive_url}")
+
     if not drive_url or "drive.google.com" not in drive_url:
+        print("[DEBUG] Invalid or missing URL")
         return None, None
 
+    # Extract file ID
     file_id = None
     for pattern in [r"id=([a-zA-Z0-9_-]+)", r"/d/([a-zA-Z0-9_-]+)"]:
         match = re.search(pattern, drive_url)
         if match:
             file_id = match.group(1)
+            print(f"[DEBUG] Extracted file_id: {file_id}")
             break
+
     if not file_id:
+        print("[DEBUG] Could not extract file_id from URL")
         return None, None
 
     session = requests.Session()
     download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
-    resp = session.get(download_url, allow_redirects=True, stream=True)
+    print(f"[DEBUG] First request → {download_url}")
 
-    # Handle Google's virus scan warning page
-    if "download_warning" in resp.cookies:
-        confirm_token = resp.cookies.get("download_warning")
-        download_url = f"https://drive.google.com/uc?export=download&id={file_id}&confirm={confirm_token}"
-        resp = session.get(download_url, stream=True)
+    try:
+        resp = session.get(download_url, allow_redirects=True, stream=True, timeout=30)
+        print(f"[DEBUG] First response status: {resp.status_code}")
 
-    if resp.status_code != 200:
+        # Handle Google virus scan warning
+        if "download_warning" in resp.cookies:
+            confirm_token = resp.cookies.get("download_warning")
+            download_url = f"https://drive.google.com/uc?export=download&id={file_id}&confirm={confirm_token}"
+            print(f"[DEBUG] Virus scan detected. Confirming with token: {confirm_token}")
+            resp = session.get(download_url, stream=True, timeout=30)
+            print(f"[DEBUG] Confirm request status: {resp.status_code}")
+
+        if resp.status_code != 200:
+            print(f"[DEBUG] Download failed with status {resp.status_code}")
+            return None, None
+
+        # Get filename from header
+        filename = "offline_proof.jpg"
+        cd = resp.headers.get("Content-Disposition")
+        if cd:
+            match = re.findall(r'filename\*?=utf-8\'\'"?([^";]+)"?', cd)
+            if match:
+                import urllib.parse
+                filename = urllib.parse.unquote(match[0])
+                print(f"[DEBUG] Filename from header: {filename}")
+            else:
+                print(f"[DEBUG] No filename in Content-Disposition: {cd}")
+
+        # Critical: Read content ONCE and keep it in memory
+        content = resp.content
+        print(f"[DEBUG] File downloaded successfully. Size: {len(content)} bytes")
+
+        # Return filename + ContentFile (safe for multiple use)
+        return filename, ContentFile(content)
+
+    except Exception as e:
+        print(f"[ERROR] Exception in download_drive_file: {e}")
+        import traceback
+        traceback.print_exc()
         return None, None
-
-    filename = "offline_proof.jpg"
-    cd = resp.headers.get("Content-Disposition")
-    if cd:
-        import re
-        match = re.findall('filename="?([^"]+)"?', cd)
-        if match:
-            filename = match[0]
-
-    return filename, ContentFile(resp.content)
-
 
 def yatra_bulk_offline_import(request, yatra_id):
     print("=== Starting yatra_bulk_offline_import ===")
@@ -125,10 +160,20 @@ def yatra_bulk_offline_import(request, yatra_id):
                 print(f"Drive URL: {drive_url}, Payment Type: {payment_type}")
 
                 target_installments = []
-                if "3000" in payment_type and "Advance" in payment_type:
-                    target_installments = list(yatra.installments.filter(amount=3000))
-                elif "6500" in payment_type or "Full" in payment_type:
-                    target_installments = list(yatra.installments.filter(amount__in=[3000, 3500, 6500]))
+                total_amount = 0
+                all_installments = list(yatra.installments.all().order_by('amount'))
+                if payment_type == "3000 Advance":
+                    total_amount = 3000
+                    for inst in all_installments:
+                        if inst.amount == 3000:
+                            target_installments.append(inst)
+                            break
+                elif payment_type == "6500 Full Payment":
+                    total_amount = 6500
+                    for inst in all_installments:
+                        if inst.amount in [3000, 3500]:
+                            print(f"Adding installment {inst.label} for 6500 Full Payment")
+                            target_installments.append(inst)
 
                 print(f"Target installments: {[inst.label for inst in target_installments]}")
 
@@ -157,28 +202,58 @@ def yatra_bulk_offline_import(request, yatra_id):
                 print(f"Registration saved for profile {profile_id}")
 
                 # Process installments & payments
+                print(f"[DEBUG] Downloading proof from: {drive_url}")
                 filename, file_content = download_drive_file(drive_url)
-                for inst in target_installments:
-                    reg_inst, _ = YatraRegistrationInstallment.objects.get_or_create(
-                        registration=reg, installment=inst
-                    )
-                    payment = Payment.objects.create(
-                        transaction_id=f"OFFLINE-{profile.member_id}-{yatra.id}-{inst.id}",
-                        total_amount=inst.amount,
+
+                if not file_content:
+                    print(f"[ERROR] Failed to download proof for {profile.id}")
+
+                ext =".png"
+
+                if file_content:
+                    try:
+                        raw = file_content.read()
+                        ext = guess_extension_from_bytes(raw) or ".bin"
+                        file_content = ContentFile(raw)   # recreate safe ContentFile for Django
+                    except Exception as e:
+                        print("[ERROR] Extension detection failed:", e)
+                        ext = ".jpg"
+
+                if file_content:
+                    file_content.seek(0)  # Reset pointer after reading for type guessing
+
+                payment = Payment.objects.create(
+                        transaction_id=f"OFFLINE-{profile.member_id}-{yatra.id}-{timezone.now():%Y%m%d%H%M%S}",
+                        total_amount=total_amount,
                         uploaded_by=request.user.profile,
                         status='verified',
                         processed_by=request.user.profile,
                         processed_at=timezone.now(),
                         notes=f"Bulk imported by {request.user} on {timezone.now():%Y-%m-%d}"
                     )
+                print(f"[DEBUG] Payment record created: {payment.transaction_id}")
+                if file_content:
+                    # Clone the file content for each payment (critical!)
+                    payment.proof.save(
+                        f"offline_proof_{profile.member_id}{ext}",
+                        file_content,  
+                        save=True
+                    )
+                    print(f"   → Proof file saved for {profile.member_id}")
+                else:
+                    print(f"   → No proof file downloaded for {profile.member_id}")
 
-                    if file_content:
-                        payment.proof.save(filename or f"proof_{profile.member_id}_{inst.label}.jpg", file_content)
-                        file_content = None  # use once per profile
 
+   
+                for inst in target_installments:
+                    reg_inst, _ = YatraRegistrationInstallment.objects.get_or_create(
+                        registration=reg, installment=inst
+                    )
+                    print(f"[DEBUG] Processing installment: {inst.label} (ID: {inst.id})")
+                    
                     reg_inst.payment = payment
                     reg_inst.is_paid = True
-                    reg_inst.paid_at = timezone.now()
+                    reg_inst.paid_at = timezone.now()   
                     reg_inst.verified_by = request.user.profile
                     reg_inst.verified_at = timezone.now()
                     reg_inst.save()
@@ -191,10 +266,10 @@ def yatra_bulk_offline_import(request, yatra_id):
             if missing_profiles:
                 messages.warning(request, f"Skipped {len(missing_profiles)} profiles (missing URL or payment info).")
             else:
-                messages.success(request, f"Successfully imported {success_count} offline registrations!")
                 if 'offline_import_excel_map' in request.session:
                     del request.session['offline_import_excel_map']
-                return redirect('admin:yatra_yatra_changelist')
+                messages.success(request, f"Successfully imported {success_count} offline registrations!")
+                return redirect('admin:yatra_yatraregistration_changelist')
 
     context = {
         'yatra': yatra,
@@ -204,7 +279,7 @@ def yatra_bulk_offline_import(request, yatra_id):
         'registered_ids': registered_ids,
         'profile_excel_map': profile_excel_map,
         'missing_profiles': missing_profiles,
-        'title': f"Bulk Offline Import – {yatra.title}",
+        'title': f"Bulk Registration – {yatra.title}",
     }
     print("=== Rendering template ===")
     return render(request, 'admin/yatra/bulk_offline_import.html', context)
