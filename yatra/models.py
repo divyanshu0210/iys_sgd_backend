@@ -69,3 +69,87 @@ class YatraInstallment(models.Model):
     def __str__(self):
         return f"{self.yatra.title} → {self.label} (₹{self.amount})"
 
+
+
+# === 1. Yatra Journey (multiple travel segments) ===
+class YatraJourney(models.Model):
+    JOURNEY_TYPES = [
+        ('onward', 'Onward'),
+        ('return', 'Return'),
+        ('break', 'Break'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    yatra = models.ForeignKey('Yatra', related_name='journeys', on_delete=models.CASCADE)
+    type = models.CharField(max_length=20, choices=JOURNEY_TYPES)
+    from_location = models.CharField(max_length=255)
+    to_location = models.CharField(max_length=255)
+    start_datetime = models.DateTimeField()
+    end_datetime = models.DateTimeField()   
+    mode_of_travel = models.CharField(max_length=50, blank=True, null=True)
+    remarks = models.TextField(blank=True, null=True)
+
+    class Meta:
+        ordering = ['start_datetime']
+
+    def __str__(self):
+        return f"{self.yatra.title} → {self.type} ({self.from_location} → {self.to_location})"
+
+
+
+# === 2. Yatra Accommodation (can have multiple per yatra) ===
+class YatraAccommodation(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    yatra = models.ForeignKey('Yatra', related_name='accommodations', on_delete=models.CASCADE)
+    place_name = models.CharField(max_length=255)
+    address = models.TextField(blank=True, null=True)
+    checkin_datetime = models.DateTimeField()
+    checkout_datetime = models.DateTimeField()
+    contact_person = models.CharField(max_length=255, blank=True, null=True)
+    contact_number = models.CharField(max_length=50, blank=True, null=True)
+    notes = models.TextField(blank=True, null=True)
+
+    class Meta:
+        ordering = ['checkin_datetime']
+
+    def __str__(self):
+        return f"{self.yatra.title} → {self.place_name}"
+
+
+
+class YatraCustomField(models.Model):
+    FIELD_TYPES = [
+        ('text', 'Text'),
+        ('number', 'Number'),
+        ('date', 'Date'),
+        ('datetime', 'Datetime'),
+        ('choice', 'Choice'),
+        ('file', 'File'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    yatra = models.ForeignKey('Yatra', related_name='custom_fields', on_delete=models.CASCADE)
+    field_name = models.CharField(max_length=255)
+    field_type = models.CharField(max_length=20, choices=FIELD_TYPES, default='text')
+    is_multiple = models.BooleanField(default=False)
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['order', 'field_name']
+
+    def __str__(self):
+        return f"{self.yatra.title} → {self.field_name}"
+
+
+
+class YatraCustomFieldValue(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    custom_field = models.ForeignKey(YatraCustomField, related_name='values', on_delete=models.CASCADE)
+    value = models.TextField()
+
+    class Meta:
+        verbose_name = "Custom Field Value"
+        verbose_name_plural = "Custom Field Values"
+
+    def __str__(self):
+        return f"{self.custom_field.field_name} → {self.value}"

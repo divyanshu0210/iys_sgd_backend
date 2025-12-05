@@ -123,3 +123,41 @@ class YatraRegistrationInstallment(models.Model):
         return f"{self.registration} - {self.installment.label} ({'Paid' if self.is_paid else 'Pending'})"
 
 
+
+# === 5. Registration-specific accommodations / journeys / custom values ===
+# === Registration-specific Accommodation Assignment ===
+class RegistrationAccommodation(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    registration = models.ForeignKey('YatraRegistration', related_name='accommodation_allocations', on_delete=models.CASCADE)
+    accommodation = models.ForeignKey(YatraAccommodation, on_delete=models.CASCADE)
+    room_number = models.CharField(max_length=50, blank=True, null=True)
+    bed_number = models.CharField(max_length=50, blank=True, null=True)
+    notes = models.TextField(blank=True, null=True)
+
+    class Meta:
+        unique_together = ('registration', 'accommodation')
+
+    def __str__(self):
+        return f"{self.registration.registered_for} → {self.accommodation.place_name} (Room {self.room_number})"
+
+# === Registration-specific Journey Assignment ===
+class RegistrationJourney(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    registration = models.ForeignKey('YatraRegistration', related_name='journey_allocations', on_delete=models.CASCADE)
+    journey = models.ForeignKey(YatraJourney, on_delete=models.CASCADE)
+    vehicle_number = models.CharField(max_length=50, blank=True, null=True)
+    seat_number = models.CharField(max_length=50, blank=True, null=True)
+    notes = models.TextField(blank=True, null=True)
+
+    class Meta:
+        unique_together = ('registration', 'journey')
+
+    def __str__(self):
+        return f"{self.registration.registered_for} → {self.journey.type} ({self.seat_number or 'No Seat'})"
+
+class RegistrationCustomFieldValue(models.Model):
+    registration = models.ForeignKey('YatraRegistration', related_name='custom_values', on_delete=models.CASCADE)
+    custom_field_value = models.ForeignKey(YatraCustomFieldValue, on_delete=models.CASCADE)
+
+    def __str__(self):
+        return f"{self.registration} → {self.custom_field_value.value}"

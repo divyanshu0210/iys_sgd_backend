@@ -1,6 +1,7 @@
 from django.contrib import admin
-from django.contrib import admin
 from .models import *
+from django.urls import path
+from .admin_views import bulk_assign_details_view
 
 
 @admin.register(YatraEligibility)
@@ -17,13 +18,23 @@ class YatraEligibilityAdmin(admin.ModelAdmin):
     def has_module_permission(self, request):
         return True  # Still show in admin menu
 
+class RegistrationAccommodationInline(admin.TabularInline):
+    model = RegistrationAccommodation
+    extra = 0
 
+class RegistrationJourneyInline(admin.TabularInline):
+    model = RegistrationJourney
+    extra = 0
+
+class RegistrationCustomFieldValueInline(admin.TabularInline):
+    model = RegistrationCustomFieldValue
+    extra = 0
 
 @admin.register(YatraRegistration)
 class YatraRegistrationAdmin(admin.ModelAdmin):
     list_display = (
-        'yatra',
         'registered_for',
+        'yatra',
         'registered_by',
         'mentor_full_name',
         'status',
@@ -42,15 +53,34 @@ class YatraRegistrationAdmin(admin.ModelAdmin):
     list_filter = ('status','yatra__title', 'registered_at')
     ordering = ('-registered_at',)
     readonly_fields = ('total_amount_display', 'paid_amount_display', 'installments_status')
+    inlines = [
+        RegistrationAccommodationInline,
+        RegistrationJourneyInline,
+        RegistrationCustomFieldValueInline
+    ]
 
+    change_list_template = "admin/yatra_registration/registration_changelist.html"
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                'bulk-assign/',
+                self.admin_site.admin_view(bulk_assign_details_view),
+                name='yatra_registration_bulk_assign_details'
+            )
+        ]
+        return custom_urls + urls
+    
     # Clean display methods (no colors, no HTML)
     def total_amount_display(self, obj):
         return f"₹{obj.total_amount}"
+    
     total_amount_display.short_description = "Total Amount"
     total_amount_display.admin_order_field = 'total_amount'
 
     def paid_amount_display(self, obj):
         return f"₹{obj.paid_amount}"
+    
     paid_amount_display.short_description = "Paid"
     paid_amount_display.admin_order_field = 'paid_amount'
 
@@ -136,3 +166,4 @@ class YatraRegistrationAdmin(admin.ModelAdmin):
 #     def uploaded_at(self, obj):
 #         return obj.payment.uploaded_at if obj.payment else None
 #     uploaded_at.short_description = "Uploaded At"
+
