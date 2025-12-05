@@ -16,7 +16,8 @@ class GoogleLogin(SocialLoginView):
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('userProfile.urls')),  # Include app URLs
-    path('yatras/', include('yatra.urls')),  # Yatra app URLs
+    path('yatra/', include('yatra.urls')),  # Yatra app URLs
+    path('yatras/', include('yatra_registration.urls')),  # Yatra app URLs
     path('payments/', include('payment.urls')),  # Payment app URLs
 
       # Auth APIs

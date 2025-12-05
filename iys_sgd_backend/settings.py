@@ -66,6 +66,7 @@ INSTALLED_APPS = [
     'userProfile',
     'yatra_auth',
     'yatra',
+    'yatra_registration',
     'payment',
     'storages',
 ]

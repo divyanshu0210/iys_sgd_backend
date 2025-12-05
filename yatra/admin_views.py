@@ -5,7 +5,8 @@ from django.contrib import messages
 from django.db import transaction
 from django.utils import timezone
 from django.core.files.base import ContentFile
-from .models import Yatra, YatraEligibility, YatraRegistration, YatraRegistrationInstallment, YatraInstallment
+from .models import Yatra
+from yatra_registration.models import YatraEligibility, YatraRegistration, YatraRegistrationInstallment
 from payment.models import Payment
 from userProfile.models import Profile
 import openpyxl
@@ -269,7 +270,7 @@ def yatra_bulk_offline_import(request, yatra_id):
                 if 'offline_import_excel_map' in request.session:
                     del request.session['offline_import_excel_map']
                 messages.success(request, f"Successfully imported {success_count} offline registrations!")
-                return redirect('admin:yatra_yatraregistration_changelist')
+                return redirect('admin:yatra_registration_yatraregistration_changelist')
 
     context = {
         'yatra': yatra,
