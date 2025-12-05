@@ -30,7 +30,7 @@ from django.db.models.signals import pre_save
 from django.dispatch import receiver
 from .models import MentorRequest
 
-@receiver(pre_save, sender=MentorRequest)
+@receiver(post_save, sender=MentorRequest)
 def update_mentee_on_approval(sender, instance, **kwargs):
     """
     Update mentee's profile when a MentorRequest is approved or unapproved.
@@ -39,19 +39,13 @@ def update_mentee_on_approval(sender, instance, **kwargs):
     if not instance.pk:
         # New request, nothing to do yet
         return
-
-    # Get existing state from DB
-    previous = MentorRequest.objects.get(pk=instance.pk)
     mentee = instance.from_user
-
-    # Approved now (changed from False -> True)
-    if not previous.is_approved and instance.is_approved:
+    if instance.is_approved:
         mentee.mentor = instance.to_mentor
         mentee.user_type = 'devotee'
         mentee.save(update_fields=['mentor', 'user_type'])
-
-    # Unapproved now (changed from True -> False)
-    elif previous.is_approved and not instance.is_approved:
+        
+    elif not instance.is_approved:
         if mentee.mentor == instance.to_mentor:
             mentee.mentor = None
             mentee.user_type = 'guest'

@@ -29,7 +29,7 @@ SECRET_KEY = config("SECRET_KEY")
 
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv("DEBUG", "False") == "True"
+DEBUG = config("DEBUG", default=False, cast=bool)
 IS_DEBUG = DEBUG is True
 
 ALLOWED_HOSTS = config(
@@ -121,27 +121,25 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'iys_sgd_backend.wsgi.application'
 
-
-
-# if IS_DEBUG:
-#     # Use LOCAL SQLite or local MySQL (Whichever you want)
-#     DATABASES = {
-#         "default": {
-#             "ENGINE": "django.db.backends.sqlite3",
-#             "NAME": BASE_DIR / "db.sqlite3",
-#         }
-#     }
-# else:
-    # Use Railway MySQL in production
-DATABASE_URL = config("DATABASE_URL", default=None)
-DATABASES = {
-    "default": dj_database_url.config(
-        default=DATABASE_URL,
-        conn_max_age=0,
-        conn_health_checks=True,
-        ssl_require=False   # Railway MySQL doesn't require strict SSL
-    )
+if IS_DEBUG:
+    # Use LOCAL SQLite or local MySQL (Whichever you want)
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
     }
+else:
+    # Use Railway MySQL in production
+    DATABASE_URL = config("DATABASE_URL", default=None)
+    DATABASES = {
+        "default": dj_database_url.config(
+            default=DATABASE_URL,
+            conn_max_age=0,
+            conn_health_checks=True,
+            ssl_require=False   # Railway MySQL doesn't require strict SSL
+        )
+        }
 
 
 # Password validation
