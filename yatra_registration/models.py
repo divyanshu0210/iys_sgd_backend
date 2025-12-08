@@ -156,8 +156,15 @@ class RegistrationJourney(models.Model):
         return f"{self.registration.registered_for} → {self.journey.type} ({self.seat_number or 'No Seat'})"
 
 class RegistrationCustomFieldValue(models.Model):
-    registration = models.ForeignKey('YatraRegistration', related_name='custom_values', on_delete=models.CASCADE)
-    custom_field_value = models.ForeignKey(YatraCustomFieldValue, on_delete=models.CASCADE)
+    registration = models.ForeignKey(
+        'YatraRegistration', related_name='custom_values', on_delete=models.CASCADE
+    )
+    custom_field = models.ForeignKey(
+        YatraCustomField, on_delete=models.CASCADE , null=True, blank=True
+    )
+    custom_field_value = models.ForeignKey(
+        YatraCustomFieldValue, on_delete=models.CASCADE
+    )
 
-    def __str__(self):
-        return f"{self.registration} → {self.custom_field_value.value}"
+    class Meta:
+        unique_together = ('registration', 'custom_field')

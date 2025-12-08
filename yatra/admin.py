@@ -5,12 +5,16 @@ from django.urls import reverse
 from django.utils.html import format_html
 from django.urls import path
 import nested_admin
+from .admin_forms import *
+
 # Register your models here.
+
 
 class YatraFormFieldInline(nested_admin.NestedTabularInline):
     model = YatraFormField
     extra = 1
     fields = ['name', 'label', 'field_type', 'options', 'is_required', 'order']
+    form = YatraFormFieldForm
 
 
 class YatraInstallmentInline(nested_admin.NestedTabularInline):
@@ -22,11 +26,13 @@ class YatraInstallmentInline(nested_admin.NestedTabularInline):
 class YatraJourneyInline(nested_admin.NestedTabularInline):
     model = YatraJourney
     extra = 1
+    form = YatraJourneyForm
 
 
 class YatraAccommodationInline(nested_admin.NestedTabularInline):
     model = YatraAccommodation
     extra = 1
+    form = YatraAccommodationForm
 
 
 # -----------------------------
@@ -35,6 +41,8 @@ class YatraAccommodationInline(nested_admin.NestedTabularInline):
 class YatraCustomFieldValueInline(nested_admin.NestedTabularInline):
     model = YatraCustomFieldValue
     extra = 1
+    form = YatraCustomFieldValueForm
+
 
 
 class YatraCustomFieldInline(nested_admin.NestedTabularInline):

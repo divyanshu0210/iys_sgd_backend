@@ -1,78 +1,173 @@
-# admin_views.py
-from django.shortcuts import render, redirect
-from django.contrib import messages
-from .models import  YatraRegistration, YatraJourney, YatraAccommodation
-from yatra.models import Yatra
-import uuid
+# yatra_registration/admin_views.py
 
-def bulk_assign_details_view(request):
-    yatras = Yatra.objects.all().order_by('-start_date')
-    registrations = None
+from django.shortcuts import get_object_or_404, render, redirect
+from django.contrib import messages
+from django.contrib.admin.views.decorators import staff_member_required
+from django.db import transaction
+from django.urls import reverse
+
+from yatra.models import Yatra, YatraAccommodation, YatraJourney, YatraCustomFieldValue, YatraCustomField
+from .models import *
+
+@staff_member_required
+def bulk_edit_view(request, yatra_id):
+    yatra = get_object_or_404(Yatra, id=yatra_id)
+
+    registrations = YatraRegistration.objects.filter(yatra=yatra).select_related(
+        'registered_for'
+    ).prefetch_related(
+        'accommodation_allocations__accommodation',
+        'journey_allocations__journey',
+        'custom_values__custom_field_value__custom_field',
+    )
+
+    # Pre-build lookup for displaying selected custom field values
+    custom_field_assignments = {}
+    for reg in registrations:
+        custom_field_assignments[reg.id] = {
+            cfv.custom_field_value.custom_field_id: cfv.custom_field_value
+            for cfv in reg.custom_values.all()
+        }
 
     if request.method == "POST":
-        yatra_id = request.POST.get("yatra_id")
-        selected_regs = request.POST.getlist("registration_ids")
+        with transaction.atomic():
+            updated = 0
 
-        travel_id = request.POST.get("travel_id")
-        accommodation_id = request.POST.get("accommodation_id")
-        seat_number = request.POST.get("seat_number")
-        room_number = request.POST.get("room_number")
+            for reg in registrations:
+                changed = False  # Reset per registration
 
-        # ✔ Bulk update logic
-        regs = YatraRegistration.objects.filter(id__in=selected_regs)
+                # ==================== 1. ACCOMMODATIONS ====================
+                # Delete removed
+                keep_acc_uuids = [k.split('_')[-1] for k in request.POST if k.startswith('keep_acc_')]
+                deleted_acc = reg.accommodation_allocations.exclude(id__in=keep_acc_uuids).delete()[0]
+                if deleted_acc:
+                    changed = True
 
-        for reg in regs:
-            if travel_id:
-                reg.journey_id = travel_id
+                # Update existing (room/bed)
+                for key in request.POST:
+                    if key.startswith('acc_room_'):
+                        alloc_id = key.split('_')[-1]
+                        if alloc_id not in keep_acc_uuids:
+                            continue
+                        try:
+                            alloc = RegistrationAccommodation.objects.get(id=alloc_id, registration=reg)
+                            old_room, old_bed = alloc.room_number, alloc.bed_number
+                            new_room = request.POST.get(f'acc_room_{alloc_id}', '').strip() or None
+                            new_bed = request.POST.get(f'acc_bed_{alloc_id}', '').strip() or None
 
-            if accommodation_id:
-                reg.accommodation_id = accommodation_id
+                            if old_room != new_room or old_bed != new_bed:
+                                alloc.room_number = new_room
+                                alloc.bed_number = new_bed
+                                alloc.save()
+                                changed = True
+                        except RegistrationAccommodation.DoesNotExist:
+                            pass
 
-            if seat_number:
-                reg.seat_number = seat_number
+                # Add new
+                for key, acc_uuid in request.POST.items():
+                    if key.startswith('new_acc_id_'):
+                        suffix = key[len('new_acc_id_'):]
+                        room = request.POST.get(f'new_acc_room_{suffix}', '').strip() or None
+                        bed = request.POST.get(f'new_acc_bed_{suffix}', '').strip() or None
+                        try:
+                            acc_obj = YatraAccommodation.objects.get(id=acc_uuid)
+                            obj, created = RegistrationAccommodation.objects.update_or_create(
+                                registration=reg,
+                                accommodation=acc_obj,
+                                defaults={'room_number': room, 'bed_number': bed}
+                            )
+                            if created or obj.room_number != room or obj.bed_number != bed:
+                                changed = True
+                        except YatraAccommodation.DoesNotExist:
+                            pass
 
-            if room_number:
-                reg.room_number = room_number
+                # ==================== 2. JOURNEYS ====================
+                keep_journey_uuids = [k.split('_')[-1] for k in request.POST if k.startswith('keep_journey_')]
+                deleted_journey = reg.journey_allocations.exclude(id__in=keep_journey_uuids).delete()[0]
+                if deleted_journey:
+                    changed = True
 
-            reg.save()
+                # Update existing (vehicle/seat)
+                for key in request.POST:
+                    if key.startswith('veh_'):
+                        alloc_id = key.split('_')[-1]
+                        if alloc_id not in keep_journey_uuids:
+                            continue
+                        try:
+                            alloc = RegistrationJourney.objects.get(id=alloc_id, registration=reg)
+                            old_veh, old_seat = alloc.vehicle_number, alloc.seat_number
+                            new_veh = request.POST.get(f'veh_{alloc_id}', '').strip() or None
+                            new_seat = request.POST.get(f'seat_{alloc_id}', '').strip() or None
 
-        messages.success(request, "Bulk assignment completed successfully!")
-        return redirect("admin:yatra_yatraregistration_changelist")
+                            if old_veh != new_veh or old_seat != new_seat:
+                                alloc.vehicle_number = new_veh
+                                alloc.seat_number = new_seat
+                                alloc.save()
+                                changed = True
+                        except RegistrationJourney.DoesNotExist:
+                            pass
 
-        # Initial GET
-    yatra_id_str = request.GET.get("yatra")
-    print("GET yatra param:", yatra_id_str)
+                # Add new journeys
+                for key, journey_uuid in request.POST.items():
+                    if key.startswith('new_journey_id_'):
+                        suffix = key[len('new_journey_id_'):]
+                        vehicle = request.POST.get(f'new_veh_{suffix}', '').strip() or None
+                        seat = request.POST.get(f'new_seat_{suffix}', '').strip() or None
+                        try:
+                            journey_obj = YatraJourney.objects.get(id=journey_uuid)
+                            obj, created = RegistrationJourney.objects.update_or_create(
+                                registration=reg,
+                                journey=journey_obj,
+                                defaults={'vehicle_number': vehicle, 'seat_number': seat}
+                            )
+                            if created or obj.vehicle_number != vehicle or obj.seat_number != seat:
+                                changed = True
+                        except YatraJourney.DoesNotExist:
+                            pass
 
-    registrations = journeys = accommodations = []
+                # ==================== 3. CUSTOM FIELDS ====================
+                for cf in yatra.custom_fields.all():
+                    val_id = request.POST.get(f"cf_{cf.id}_{reg.id}")
+                    current = reg.custom_values.filter(custom_field=cf).first()
+                    current_val_id = str(current.custom_field_value_id) if current else None
 
-    if yatra_id_str:
-        try:
-            yatra_uuid = uuid.UUID(yatra_id_str)
-            yatra_instance = Yatra.objects.get(id=yatra_uuid)
-            print("Found Yatra:", yatra_instance)
+                    if val_id != current_val_id:
+                        if val_id:
+                            try:
+                                value_obj = YatraCustomFieldValue.objects.get(id=val_id)
+                                RegistrationCustomFieldValue.objects.update_or_create(
+                                    registration=reg,
+                                    custom_field=value_obj.custom_field,
+                                    defaults={'custom_field_value': value_obj}
+                                )
+                                changed = True
+                            except YatraCustomFieldValue.DoesNotExist:
+                                pass
+                        else:
+                            reg.custom_values.filter(custom_field=cf).delete()
+                            changed = True
 
-            registrations = YatraRegistration.objects.filter(yatra=yatra_instance).select_related('registered_for', 'registered_by')
-            print(f"Registrations count: {registrations.count()}")
-            print("Sample Registration:", registrations.first())
+                # Only count if something actually changed
+                if changed:
+                    updated += 1
 
-            journeys = YatraJourney.objects.filter(yatra=yatra_instance)
-            print(f"Journeys count: {journeys.count()}")
-            print("Sample Journey:", journeys.first())
+            messages.success(request, f"Successfully updated {updated} devotee(s)!")
+            # return redirect('admin:yatra_registration_bulk_edit', yatra_id=yatra.id)
+            # return redirect('admin:yatra_registration_yatraregistration_changelist')
+            return redirect(f"{reverse('admin:yatra_registration_yatraregistration_changelist')}?yatra__id__exact={yatra.id}")
+            
 
-            accommodations = YatraAccommodation.objects.filter(yatra=yatra_instance)
-            print(f"Accommodations count: {accommodations.count()}")
-            print("Sample Accommodation:", accommodations.first())
+    # GET request — show form
+    context = {
+        'title': f"Bulk Edit — {yatra.title}",
+        'yatra': yatra,
+        'registrations': registrations,
+        'accommodations': YatraAccommodation.objects.filter(yatra=yatra),
+        'journeys': YatraJourney.objects.filter(yatra=yatra),
+        'custom_fields': yatra.custom_fields.all().prefetch_related('values'),
+        'custom_field_assignments': custom_field_assignments,
+        'opts': YatraRegistration._meta,
+    }
 
-        except ValueError:
-            print("Invalid UUID:", yatra_id_str)
-        except Yatra.DoesNotExist:
-            print("No Yatra found with ID:", yatra_id_str)
-    else:
-        journeys = accommodations = []
-
-    return render(request, "admin/yatra_registration/bulk_assign_details.html", {
-        "yatras": yatras,
-        "registrations": registrations,
-        "journeys": journeys,
-        "accommodations": accommodations,
-    })
+    return render(request, "admin/yatra_registration/bulk_edit.html", context)
+    

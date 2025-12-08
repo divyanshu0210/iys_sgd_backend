@@ -1,0 +1,340 @@
+{% extends "admin/base_site.html" %}
+{% load admin_urls %}
+{% load admin_extras %}
+
+{% block content %}
+<div class="module">
+  <h3>Bulk Edit: {{ yatra.title }} ({{ registrations.count }} devotees)</h3>
+
+  <!-- BULK ACTION BAR -->
+  <div style="background:#f8f9fa; padding:20px; border:2px solid #007cba; border-radius:10px; margin:20px 0; display:none;" id="bulkActionBar">
+    <div style="font-weight:bold; margin-bottom:12px; color:#1e3a5f;">
+      <span id="selectedCount">0</span> devotees selected → Apply:
+    </div>
+
+    <div style="display:flex; flex-wrap:wrap; gap:15px; align-items:center;">
+
+      <!-- Accommodation -->
+      <div>
+        <select id="bulkAccommodation" style="padding:8px; min-width:200px;min-height: 40px;">
+          <option value="">Assign Accommodation...</option>
+          {% for acc in accommodations %}
+            <option value="{{ acc.id }}">{{ acc.place_name }}</option>
+          {% endfor %}
+        </select>
+        <div id="bulkRoomWrapper" style="margin-top:8px; display:none;">
+          <input type="text" id="bulkRoom" placeholder="Room Number (optional)" style="padding:6px; width:140px;">
+        </div>
+      </div>
+
+      <!-- Journey -->
+      <div>
+        <select id="bulkJourney" style="padding:8px; min-width:220px;min-height: 40px;">
+          <option value="">Assign Journey...</option>
+          {% for j in journeys %}
+            <option value="{{ j.id }}">{{ j.type|capfirst }}: {{ j.from_location }} → {{ j.to_location }}</option>
+          {% endfor %}
+        </select>
+        <div id="bulkVehicleWrapper" style="margin-top:8px; display:none;">
+          <input type="text" id="bulkVehicle" placeholder="Vehicle Number (optional)" style="padding:6px; width:180px;">
+        </div>
+      </div>
+
+      <!-- Custom Fields -->
+      {% for cf in custom_fields %}
+        <div>
+          <label style="display:block; font-weight:600; color:#1e3a5f;">{{ cf.field_name }}</label>
+          <select class="bulk-custom-field" data-field-id="{{ cf.id }}" style="padding:8px; min-width:180px;min-height: 40px;">
+            <option value="">-- No Change --</option>
+            {% for val in cf.values.all %}
+              <option value="{{ val.id }}">{{ val.value }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      {% endfor %}
+
+      <div style="margin-top:20px;">
+        <button type="button" onclick="applyBulkActions()" style="background:#007cba; color:white; padding:10px 24px; border:none; border-radius:6px; font-size:16px; cursor:pointer;">
+          Apply to Selected
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <form method="post" id="bulkForm">
+    {% csrf_token %}
+    <div style="overflow-x:auto;">
+      <table style="min-width:1600px; font-size:13px; border-collapse:collapse;">
+        <thead style="background:#1e3a5f; color:white; position:sticky; top:0; z-index:10;">
+          <tr>
+            <th><input type="checkbox" id="selectAll"></th>
+            <th>#</th>
+            <th>Devotee</th>
+            <th style="width:380px;">Accommodations</th>
+            <th style="width:420px;">Journeys + Vehicle</th>
+            {% for cf in custom_fields %}
+              <th>{{ cf.field_name }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for reg in registrations %}
+          <tr class="data-row" data-reg-id="{{ reg.id }}">
+            <td><input type="checkbox" class="row-select" onchange="updateSelection()"></td>
+            <td>{{ forloop.counter }}</td>
+            <td>
+              <strong>{{ reg.registered_for.first_name }} {{ reg.registered_for.last_name }}</strong><br>
+              <small style="color:#666">{{ reg.registered_for.mobile }}</small>
+            </td>
+
+            <!-- ACCOMMODATIONS -->
+            <td>
+              <div id="acc_container_{{ reg.id }}">
+                {% for alloc in reg.accommodation_allocations.all %}
+                  <div class="entry-box" style="margin:5px 0; padding:8px; background:#f0f8ff; border-left:4px solid #007cba; border-radius:4px;">
+                    <strong>{{ alloc.accommodation.place_name }}</strong>
+                    <button type="button" class="remove-btn" style="float:right; background:#d63638; color:white; border:none; border-radius:50%; width:20px; height:20px; font-size:12px; cursor:pointer;">×</button>
+                    <br>
+                    Room: <input name="acc_room_{{ alloc.id }}" value="{{ alloc.room_number|default:'' }}" size="8" class="track-change" placeholder="">
+                    Bed:  <input name="acc_bed_{{ alloc.id }}" value="{{ alloc.bed_number|default:'' }}" size="6" class="track-change">
+                    <input type="hidden" name="keep_acc_{{ alloc.id }}" value="1">
+                  </div>
+                {% endfor %}
+              </div>
+
+              <select onchange="addAccommodation(this, '{{ reg.id }}')" style="margin-top:8px; width:100%;">
+                <option value="">+ Add Accommodation</option>
+                {% for acc in accommodations %}
+                  <option value="{{ acc.id }}">{{ acc.place_name }}</option>
+                {% endfor %}
+              </select>
+            </td>
+
+            <!-- JOURNEYS + VEHICLE -->
+            <td>
+              <div id="journey_container_{{ reg.id }}">
+                {% for alloc in reg.journey_allocations.all %}
+                  <div class="entry-box" style="margin:5px 0; padding:8px; background:#e8f5e8; border-left:4px solid #28a745; border-radius:4px;">
+                    <strong>{{ alloc.journey.type|capfirst }}: {{ alloc.journey.from_location }} → {{ alloc.journey.to_location }}</strong>
+                    <button type="button" class="remove-btn" style="float:right; background:#d63638; color:white; border:none; border-radius:50%; width:20px; height:20px; font-size:12px; cursor:pointer;">×</button>
+                    <br>
+                    Vehicle: <input name="veh_{{ alloc.id }}" value="{{ alloc.vehicle_number|default:'' }}" size="14" class="track-change" placeholder="">
+                    Seat:    <input name="seat_{{ alloc.id }}" value="{{ alloc.seat_number|default:'' }}" size="6" class="track-change" placeholder="">
+                    <input type="hidden" name="keep_journey_{{ alloc.id }}" value="1">
+                  </div>
+                {% endfor %}
+              </div>
+
+              <select onchange="addJourney(this, '{{ reg.id }}')" style="margin-top:8px; width:100%;">
+                <option value="">+ Add Journey</option>
+                {% for j in journeys %}
+                  <option value="{{ j.id }}">{{ j.type|capfirst }}: {{ j.from_location }} → {{ j.to_location }}</option>
+                {% endfor %}
+              </select>
+            </td>
+
+            <!-- CUSTOM FIELDS -->
+            {% for cf in custom_fields %}
+              <td>
+                <select name="cf_{{ cf.id }}_{{ reg.id }}" class="track-change">
+                  <option value="">--</option>
+                  {% for val in cf.values.all %}
+                    {% with selected_val=custom_field_assignments|get_item:reg.id|get_item:cf.id %}
+                      <option value="{{ val.id }}" {% if selected_val and selected_val.id == val.id %}selected{% endif %}>
+                        {{ val.value }}
+                      </option>
+                    {% endwith %}
+                  {% endfor %}
+                </select>
+              </td>
+            {% endfor %}  
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div style="text-align:center; margin:40px 0;">
+      <button type="submit" id="saveBtn" class="default" disabled
+              style="font-size:20px; padding:18px 80px; background:#6c757d; color:white; border:none; border-radius:8px; cursor:not-allowed;">
+        No Changes to Save
+      </button>
+    </div>
+  </form>
+</div>
+
+<script>
+let hasChanges = false;
+
+function markChanged(row) {
+  if (!row.classList.contains('changed')) {
+    row.classList.add('changed');
+    row.style.backgroundColor = '#fff3cd';
+    enableSaveButton();
+  }
+}
+
+function enableSaveButton() {
+  const btn = document.getElementById('saveBtn');
+  btn.disabled = false;
+  btn.style.backgroundColor = '#28a745';
+  btn.style.cursor = 'pointer';
+  btn.textContent = `Save All Changes (${document.querySelectorAll('.changed').length} modified)`;
+}
+
+function disableSaveButton() {
+  const btn = document.getElementById('saveBtn');
+  btn.disabled = true;
+  btn.style.backgroundColor = '#6c757d';
+  btn.style.cursor = 'not-allowed';
+  btn.textContent = 'No Changes to Save';
+}
+
+// Track changes
+document.querySelectorAll('.track-change').forEach(el => {
+  el.addEventListener('change', () => markChanged(el.closest('.data-row')));
+});
+document.addEventListener('click', e => {
+  if (e.target.classList.contains('remove-btn')) {
+    const row = e.target.closest('.data-row');
+    e.target.closest('.entry-box').remove();
+    markChanged(row);
+  }
+});
+
+function addAccommodation(select, regId) {
+  if (!select.value) return;
+  const container = document.getElementById('acc_container_' + regId);
+  const name = select.options[select.selectedIndex].text;
+  const uid = select.value + "_" + Date.now();
+  container.innerHTML += `
+    <div class="entry-box" style="margin:5px 0; padding:8px; background:#f0f8ff; border-left:4px solid #007cba; border-radius:4px;">
+      <strong>${name}</strong>
+      <button type="button" class="remove-btn" style="float:right; background:#d63638; color:white; border:none; border-radius:50%; width:20px; height:20px; font-size:12px; cursor:pointer;">×</button>
+      <br>
+      Room: <input name="new_acc_room_${regId}_${uid}" size="8" class="track-change" placeholder="">
+      Bed:  <input name="new_acc_bed_${regId}_${uid}" size="6" class="track-change">
+      <input type="hidden" name="new_acc_id_${regId}_${uid}" value="${select.value}">
+    </div>`;
+  select.value = '';
+  markChanged(select.closest('.data-row'));
+}
+
+function addJourney(select, regId) {
+  if (!select.value) return;
+  const container = document.getElementById('journey_container_' + regId);
+  const name = select.options[select.selectedIndex].text;
+  const uid = select.value + "_" + Date.now();
+  container.innerHTML += `
+    <div class="entry-box" style="margin:5px 0; padding:8px; background:#e8f5e8; border-left:4px solid #28a745; border-radius:4px;">
+      <strong>${name}</strong>
+      <button type="button" class="remove-btn" style="float:right; background:#d63638; color:white; border:none; border-radius:50%; width:20px; height:20px; font-size:12px; cursor:pointer;">×</button>
+      <br>
+      Vehicle: <input name="new_veh_${regId}_${uid}" size="14" class="track-change" placeholder="">
+      Seat:    <input name="new_seat_${regId}_${uid}" size="6" class="track-change" placeholder="">
+      <input type="hidden" name="new_journey_id_${regId}_${uid}" value="${select.value}">
+    </div>`;
+  select.value = '';
+  markChanged(select.closest('.data-row'));
+}
+
+// Smart show/hide of optional inputs
+document.getElementById('bulkAccommodation').addEventListener('change', function() {
+  document.getElementById('bulkRoomWrapper').style.display = this.value ? 'block' : 'none';
+});
+document.getElementById('bulkJourney').addEventListener('change', function() {
+  document.getElementById('bulkVehicleWrapper').style.display = this.value ? 'block' : 'none';
+});
+
+// Bulk selection
+document.getElementById('selectAll').addEventListener('change', function() {
+  document.querySelectorAll('.row-select').forEach(cb => cb.checked = this.checked);
+  updateSelection();
+});
+
+function updateSelection() {
+  const count = document.querySelectorAll('.row-select:checked').length;
+  document.getElementById('selectedCount').textContent = count;
+  document.getElementById('bulkActionBar').style.display = count > 0 ? 'block' : 'none';
+}
+
+function applyBulkActions() {
+  const selected = document.querySelectorAll('.row-select:checked');
+  if (selected.length === 0) return;
+
+  const accId = document.getElementById('bulkAccommodation').value;
+  const journeyId = document.getElementById('bulkJourney').value;
+  const vehicle = document.getElementById('bulkVehicle').value.trim();
+  const room = document.getElementById('bulkRoom').value.trim();
+
+  selected.forEach((cb, i) => {
+    const row = cb.closest('.data-row');
+    const regId = row.dataset.regId;
+
+    if (accId) {
+      const name = document.querySelector(`#bulkAccommodation option[value="${accId}"]`).text;
+      const container = document.getElementById('acc_container_' + regId);
+      const uid = accId + "_" + Date.now() + "_" + i;
+      container.innerHTML += `
+        <div class="entry-box" style="margin:5px 0; padding:8px; background:#f0f8ff; border-left:4px solid #007cba; border-radius:4px;">
+          <strong>${name}</strong>
+          <button type="button" class="remove-btn" style="float:right; background:#d63638; color:white; border:none; border-radius:50%; width:20px; height:20px; font-size:12px; cursor:pointer;">×</button>
+          <br>
+          Room: <input name="new_acc_room_${regId}_${uid}" value="${room}" size="8" class="track-change" placeholder="">
+          Bed:  <input name="new_acc_bed_${regId}_${uid}" size="6" class="track-change">
+          <input type="hidden" name="new_acc_id_${regId}_${uid}" value="${accId}">
+        </div>`;
+      markChanged(row);
+    }
+
+    if (journeyId) {
+      const name = document.querySelector(`#bulkJourney option[value="${journeyId}"]`).text;
+      const container = document.getElementById('journey_container_' + regId);
+      const uid = journeyId + "_" + Date.now() + "_" + i;
+      container.innerHTML += `
+        <div class="entry-box" style="margin:5px 0; padding:8px; background:#e8f5e8; border-left:4px solid #28a745; border-radius:4px;">
+          <strong>${name}</strong>
+          <button type="button" class="remove-btn" style="float:right; background:#d63638; color:white; border:none; border-radius:50%; width:20px; height:20px; font-size:12px; cursor:pointer;">×</button>
+          <br>
+          Vehicle: <input name="new_veh_${regId}_${uid}" value="${vehicle}" size="14" class="track-change" placeholder="">
+          Seat:    <input name="new_seat_${regId}_${uid}" size="6" class="track-change" placeholder="">
+          <input type="hidden" name="new_journey_id_${regId}_${uid}" value="${journeyId}">
+        </div>`;
+      markChanged(row);
+    }
+
+    // Bulk assign custom fields
+    document.querySelectorAll('.bulk-custom-field').forEach(sel => {
+      if (sel.value) {
+        const fieldId = sel.dataset.fieldId;
+        const valueId = sel.value;
+        const valueText = sel.options[sel.selectedIndex].text;
+        const currentSelect = document.querySelector(`select[name="cf_${fieldId}_${regId}"]`);
+        if (currentSelect) {
+          currentSelect.value = valueId;
+          markChanged(row);
+        }
+      }
+    });
+  });
+
+  // Reset all
+  document.getElementById('bulkAccommodation').value = '';
+  document.getElementById('bulkJourney').value = '';
+  document.getElementById('bulkVehicle').value = '';
+  document.getElementById('bulkRoom').value = '';
+  document.querySelectorAll('.bulk-custom-field').forEach(s => s.value = '');
+  document.getElementById('bulkRoomWrapper').style.display = 'none';
+  document.getElementById('bulkVehicleWrapper').style.display = 'none';
+}
+
+// Reset after save
+if (window.location.search.includes('saved=1')) {
+  document.querySelectorAll('.data-row').forEach(r => {
+    r.style.backgroundColor = '';
+    r.classList.remove('changed');
+  });
+  disableSaveButton();
+}
+</script>
+{% endblock %}
