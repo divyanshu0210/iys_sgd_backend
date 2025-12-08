@@ -1,4 +1,3 @@
-from django.shortcuts import render
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -8,6 +7,7 @@ from django.shortcuts import get_object_or_404
 from django.db import transaction
 from django.core.mail import send_mail
 from django.conf import settings
+from yatra_registration.models import *
 from .models import *
 from .serializers import *
 from yatra.models import *
@@ -15,12 +15,6 @@ import qrcode # type: ignore
 from io import BytesIO
 from django.http import HttpResponse
 import logging
-import re
-from rest_framework.decorators import api_view
-from rapidocr_onnxruntime  import RapidOCR
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-
 
 
 def generate_upi_qr(upi_id, amount, name, note="Yatra Payment"):
@@ -151,80 +145,3 @@ class UploadPaymentScreenshotView(APIView):
             "proof_url": request.build_absolute_uri(payment.proof.url)
         })
 
-engine = RapidOCR(det_model_path=None, cls_model_path=None)
-
-@csrf_exempt
-def verify_payment(request):
-    if request.method != "POST":
-        return JsonResponse({"error": "POST only"}, status=400)
-
-    if "file" not in request.FILES:
-        return JsonResponse({"error": "file missing"}, status=400)
-
-    image = request.FILES["file"]
-    expected_amount = request.POST.get("amount")
-
-    if not expected_amount:
-        return JsonResponse({"error": "amount missing"}, status=400)
-
-    try:
-        expected_amount_float = float(expected_amount.replace(",", ""))
-    except:
-        return JsonResponse({"error": "invalid amount"}, status=400)
-
-    # --- OCR ---
-    image_bytes = image.read()
-    res, _ = engine(image_bytes)
-    print(res)
-
-    # ------ CORRECT WAY TO READ TEXT FROM RapidOCROutput ------
-    extracted_text = " ".join([item[1] for item in res]) if res else ""
-    print("OCR TEXT:", extracted_text)
-
-    # Normalize text
-    normalized_text = extracted_text.lower().replace(",", "").replace(" ", "")
-    amount_str = expected_amount.replace(",", "")
-
-    # ------ PAYMENT KEYWORDS ------
-    payment_keywords = [
-        "completed", "success", "successful", "payment", "paymentsuccessful",
-        "moneysent", "sent", "yousent", "youpayed", "paid", "paidto",
-        "credited", "debited", "received", "paymentdone",
-        "upi", "upiid", "upitransactionid", "upitransaction",
-        "refno", "referenceid", "transactionid", "txn", "txnid", "ref",
-        "googlepay", "gpay", "paytm", "phonepe", "bhim", "poweredbyupi",
-        "from:", "to:", "sentto",
-        "sbi", "hdfc", "icici", "axis", "kotak"
-    ]
-
-    has_keyword = any(kw in normalized_text for kw in payment_keywords)
-
-    # ------ EXACT AMOUNT MATCH ------
-    amount_patterns = set([
-        amount_str,                            # 20000
-        f"{expected_amount_float:.2f}",        # 20000.00
-        f"{expected_amount_float:.0f}",        # 20000
-    ])
-
-    found_amount = any(a in normalized_text for a in amount_patterns)
-
-    print("Amount patterns:", amount_patterns)
-    print("Keyword found:", has_keyword)
-    print("Amount match:", found_amount)
-
-    if not found_amount:
-        return JsonResponse({
-            "success": False,
-            "message": f"Amount mismatch. Expected amount ₹{expected_amount}."
-        })
-    
-    if not has_keyword:
-        return JsonResponse({
-            "success": False,
-            "message": "Screenshot must contain UPI TransactionId/Reference No."
-        })
-
-    return JsonResponse({
-        "success": True,
-        "message": "Screenshot is valid to submit."
-    })
