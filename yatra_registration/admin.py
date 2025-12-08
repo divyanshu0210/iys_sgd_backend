@@ -1,4 +1,7 @@
 from django.contrib import admin
+from django.contrib.admin import RelatedOnlyFieldListFilter
+
+from yatra_registration.bulk_import_admin_views import yatra_bulk_offline_import
 from .models import *
 from django.urls import path
 from .admin_views import *
@@ -10,6 +13,21 @@ from django.contrib import admin
 from django.urls import reverse
 from django.utils.html import format_html
 
+from django.contrib.admin import SimpleListFilter
+
+class YatraListFilter(SimpleListFilter):
+    title = 'Yatra'
+    parameter_name = 'yatra'
+
+    def lookups(self, request, model_admin):
+        # show all yatras in the filter, even if no registrations exist
+        from yatra.models import Yatra
+        return [(y.id, y.title) for y in Yatra.objects.all()]
+
+    def queryset(self, request, queryset):
+        if self.value():
+            return queryset.filter(yatra_id=self.value())
+        return queryset
 
 # ──────────────────────────────────────────────────────────────
 # FIXED & WORKING: Dynamic Custom Field Dropdown in Inline
@@ -134,7 +152,8 @@ class YatraRegistrationAdmin(admin.ModelAdmin):
         'registered_for__last_name',
         'registered_by__full_name',
     )
-    list_filter = ('yatra','status', 'registered_at')
+    list_filter = (
+        YatraListFilter,'status', 'registered_at')
     ordering = ('-registered_at',)
     readonly_fields = ('total_amount_display', 'paid_amount_display', 'installments_status')
     inlines = [
@@ -282,6 +301,11 @@ class YatraRegistrationAdmin(admin.ModelAdmin):
                 'bulk-edit/<uuid:yatra_id>/',
                 self.admin_site.admin_view(bulk_edit_view),
                 name='yatra_registration_bulk_edit',
+            ),
+             path(
+                'bulk-offline-import/<uuid:yatra_id>/',
+                self.admin_site.admin_view(yatra_bulk_offline_import),
+                name='yatra_bulk_offline_import',
             ),
         ]
         return custom_urls + urls

@@ -5,9 +5,12 @@
   {{ block.super }}
 
   {% if yatra %}
-    <li>
+    <li style="display: flex; gap:10px;min-height: 30px;">
       <a href="{% url 'admin:yatra_registration_bulk_edit' yatra.id %}" class="button" style="background:#1e3a5f; color:white; font-weight:600;">
-        Manage Travel & Accommodation ({{ yatra.title }})
+        Manage Travel & Accommodation 
+      </a>
+      <a href="{% url 'admin:yatra_bulk_offline_import' yatra.id %}" class="button" style="background:#1e3a5f; color:white; font-weight:600;">
+       Register from Google Form
       </a>
     </li>
   {% endif %}

@@ -2,8 +2,9 @@
 from django.shortcuts import get_object_or_404, redirect, render
 from django.contrib import messages
 from django.db import transaction
+from django.urls import reverse
 from django.utils import timezone
-from .models import Yatra
+from yatra.models import Yatra
 from yatra_registration.models import YatraEligibility, YatraRegistration, YatraRegistrationInstallment
 from payment.models import Payment
 from userProfile.models import Profile
@@ -160,7 +161,8 @@ def yatra_bulk_offline_import(request, yatra_id):
                 if 'offline_import_excel_map' in request.session:
                     del request.session['offline_import_excel_map']
                 messages.success(request, f"Successfully imported {success_count} offline registrations!")
-                return redirect('admin:yatra_registration_yatraregistration_changelist')
+                # return redirect('admin:yatra_registration_yatraregistration_changelist')
+                return redirect(f"{reverse('admin:yatra_registration_yatraregistration_changelist')}?yatra__id__exact={yatra.id}")
 
     context = {
         'yatra': yatra,

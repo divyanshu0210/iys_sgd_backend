@@ -1,5 +1,5 @@
 from django.contrib import admin
-from yatra.admin_views import yatra_bulk_offline_import
+from yatra_registration.bulk_import_admin_views import yatra_bulk_offline_import
 from .models import *
 from django.urls import reverse
 from django.utils.html import format_html
@@ -54,29 +54,29 @@ class YatraCustomFieldInline(nested_admin.NestedTabularInline):
 
 @admin.register(Yatra)
 class YatraAdmin(nested_admin.NestedModelAdmin):
-    list_display = ('id','title', 'location', 'start_date', 'end_date', 'capacity','payment_upi_id', 'created_at','bulk_import_link')
+    list_display = ('id','title', 'location', 'start_date', 'end_date', 'capacity','payment_upi_id', 'created_at')
     search_fields = ('title', 'location')
     list_filter = ('start_date', 'location')
     ordering = ('-created_at',)
     inlines = [YatraFormFieldInline, YatraInstallmentInline,YatraJourneyInline, YatraAccommodationInline, YatraCustomFieldInline]
 
-    def bulk_import_link(self, obj):
-        if not obj.is_registration_open:
-            return "-"
-        url = reverse('admin:yatra_bulk_offline_import', args=[obj.id])
-        return format_html('<a href="{}" class="button">Bulk Registrations</a>', url)
-    bulk_import_link.short_description = "Bulk Registeration"
+    # def bulk_import_link(self, obj):
+    #     if not obj.is_registration_open:
+    #         return "-"
+    #     url = reverse('admin:yatra_bulk_offline_import', args=[obj.id])
+    #     return format_html('<a href="{}" class="button">Bulk Registrations</a>', url)
+    # bulk_import_link.short_description = "Bulk Registeration"
 
-    def get_urls(self):
-        urls = super().get_urls()
+    # def get_urls(self):
+    #     urls = super().get_urls()
 
-        custom_urls = [
-            path(
-                'bulk-offline-import/<uuid:yatra_id>/',
-                self.admin_site.admin_view(yatra_bulk_offline_import),
-                name='yatra_bulk_offline_import',
-            ),
-        ]
-        return custom_urls + urls
+    #     custom_urls = [
+    #         path(
+    #             'bulk-offline-import/<uuid:yatra_id>/',
+    #             self.admin_site.admin_view(yatra_bulk_offline_import),
+    #             name='yatra_bulk_offline_import',
+    #         ),
+    #     ]
+    #     return custom_urls + urls
 
 
