@@ -29,3 +29,13 @@ class YatraSerializer(serializers.ModelSerializer):
             'form_fields', 'installments'
         ]
 
+class AccommodationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = YatraAccommodation
+        fields = "__all__"
+
+class JourneySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = YatraJourney
+        fields = "__all__"
+

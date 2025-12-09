@@ -6,7 +6,7 @@ from rest_framework import status
 from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 from django.shortcuts import get_object_or_404
 
-from yatra.serializers import YatraSerializer
+from yatra.serializers import *
 from .models import *
 from userProfile.serializers import ProfileSerializer
 from .serializers import *
@@ -299,7 +299,10 @@ class YatraRegistrationView(APIView):
         existing_registrations = YatraRegistration.objects.filter(
             yatra=yatra,
             registered_for__in=all_profiles
-        ).select_related('registered_for').prefetch_related('installments__installment')
+        ).select_related('registered_for').prefetch_related('installments__installment',
+                                                            'accommodation_allocations__accommodation',
+            'journey_allocations__journey',
+            'custom_values__custom_field_value__custom_field')
 
         registration_map = {reg.registered_for_id: reg for reg in existing_registrations}
 
@@ -369,6 +372,50 @@ class YatraRegistrationView(APIView):
                         'tag': tag
                     })  
 
+                        # ========================
+                # ACCOMMODATION SUMMARY
+                # ========================
+                accommodation_data = []
+                for alloc in registration.accommodation_allocations.all():
+                    # accommodation_data.append({
+                    #     "accommodation": alloc.accommodation,
+                    #     "room_number": alloc.room_number,
+                    #     "bed_number": alloc.bed_number
+                    # })
+                    accommodation_data.append({
+                        "accommodation": AccommodationSerializer(
+                            alloc.accommodation, 
+                            context={'request': request}
+                        ).data,
+                        "room_number": alloc.room_number,
+                        "bed_number": alloc.bed_number
+                    })
+
+
+                # ========================
+                # JOURNEY SUMMARY
+                # ========================
+                journey_data = []
+                for j in registration.journey_allocations.all():
+                    journey_data.append({
+                         "journey": JourneySerializer(
+                            j.journey, 
+                            context={'request': request}
+                        ).data,
+                        "vehicle_number": j.vehicle_number,
+                        "seat_number": j.seat_number,
+                    })
+
+                # ========================
+                # CUSTOM FIELD SUMMARY
+                # ========================
+                custom_fields = []
+                for v in registration.custom_values.all():
+                    custom_fields.append({
+                        "field": v.custom_field_value.custom_field.field_name,
+                        "value": v.custom_field_value.value
+                    })
+
                 profile_data.update({
                     'is_registered': True,
                     'registration_id': str(registration.id),
@@ -378,7 +425,11 @@ class YatraRegistrationView(APIView):
                     'pending_amount': float(registration.pending_amount),
                     'installments_paid': paid_installments,
                     'installments_pending': pending_installments,
-                    'installments_info': installments_info
+                    'installments_info': installments_info,
+
+                    'accommodation': accommodation_data,
+                    'journey': journey_data,
+                    'custom_fields': custom_fields,
                 })
             else:
                 installments_info = [
@@ -393,7 +444,11 @@ class YatraRegistrationView(APIView):
                     'pending_amount': float(sum(inst.amount for inst in yatra_installments)),
                     'installments_paid': [],
                     'installments_pending': [inst.label for inst in yatra_installments],
-                    'installments_info': installments_info
+                    'installments_info': installments_info,
+
+                    'accommodation': [],
+                    'journey': [],
+                    'custom_fields': [],
                 })
 
         return Response({

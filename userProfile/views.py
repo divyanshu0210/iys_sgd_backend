@@ -269,4 +269,23 @@ class MentorRequestView(APIView):
         #     )
 
         return Response({"message": "Request rejected."}, status=status.HTTP_200_OK)
+    
+
+# api/views.py
+import base64
+import requests
+from django.http import JsonResponse
+
+def proxy_image(request):
+    url = request.GET.get("url")
+    if not url:
+        return JsonResponse({"error": "Missing URL"}, status=400)
+
+    try:
+        r = requests.get(url)
+        encoded = base64.b64encode(r.content).decode()
+        return JsonResponse({"base64": encoded})
+    except:
+        return JsonResponse({"error": "Fetch Failed"}, status=400)
+
 
