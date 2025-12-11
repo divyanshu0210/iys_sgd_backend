@@ -30,6 +30,7 @@ class ProfileSerializer(serializers.ModelSerializer):
     is_profile_approved = serializers.SerializerMethodField()
     profile_approved_at = serializers.SerializerMethodField()
     mentor = MentorField(required=False, allow_null=True)  # ✅ use our custom field
+    mentor_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Profile
@@ -58,6 +59,7 @@ class ProfileSerializer(serializers.ModelSerializer):
             'address',
             'emergency_contact',
             'mentor',
+            'mentor_name',
             'profile_picture',
             'profile_picture_url',
             'no_of_chanting_rounds',
@@ -68,6 +70,11 @@ class ProfileSerializer(serializers.ModelSerializer):
 
     def get_full_name(self, obj):
         return f"{obj.first_name or ''} {obj.last_name or ''}".strip()
+    
+    def get_mentor_name(self, obj):
+        if obj.mentor:
+            return f"{obj.mentor.first_name} {obj.mentor.last_name}".strip()
+        return None
 
     def get_profile_picture_url(self, obj):
         request = self.context.get('request')
