@@ -209,7 +209,8 @@ def respond_substitution_request(request, req_id):
         sr.status = "accepted"
         sr.accepted_at = timezone.now()
         sr.processed_by = user_profile
-        sr.delete()
+        sr.new_registration = new_reg
+        sr.save()
 
     # Notify initiator & target about success
 

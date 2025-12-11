@@ -1,3 +1,4 @@
+from django.http import JsonResponse
 from django.shortcuts import render
 from django.shortcuts import render
 from rest_framework.views import APIView
@@ -7,6 +8,7 @@ from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 from django.shortcuts import get_object_or_404
 
 from yatra.serializers import *
+from yatra_substitution.models import SubstitutionRequest
 from .models import *
 from userProfile.serializers import ProfileSerializer
 from .serializers import *
@@ -687,25 +689,116 @@ class YatraRegistrationDetailView(APIView):
             return Response(blank_data, status=status.HTTP_200_OK)
 
 
-
 class MarkAttendanceView(APIView):
-    # authentication_classes = []   # 🚀 No authentication required     
-    # permission_classes = [AllowAny] 
-    permission_classes = [IsAdminUser]  # only superusers
+    permission_classes = [IsAdminUser]
 
     def get(self, request, registration_id):
+        try:
+            reg = YatraRegistration.objects.get(id=registration_id)
+        except YatraRegistration.DoesNotExist:
+            return render(request, "attendance_result.html", {
+                "title": "Invalid QR",
+                "message": "No registration found.",
+            })
 
-        registration = get_object_or_404(YatraRegistration, id=registration_id)
-        
-        if registration.status == "attended":
-            return Response({"message": "Already marked"}, status=status.HTTP_200_OK)
-        elif registration.status != "paid":
-            return Response({"message": "Registration is not completed"}, status=status.HTTP_200_OK)
+        profile = reg.registered_for
+        substitution = None
 
-        # registration.status = 'attended'
-        # registration.save()
+        # Already attended
+        if reg.status == "attended":
+            return render(request, "attendance_result.html", {
+                "title": "QR Verification",
+                "message": "Attendance already marked.",
+                "profile": profile,
+                "reg": reg,
+            })
 
-        return Response({
-             "message": f"{registration.registered_for.first_name} {registration.registered_for.last_name} marked as attended",
-            "status": registration.status
-        }, status=status.HTTP_200_OK)
+        # Not fully paid
+        if reg.status != "paid":
+            return render(request, "attendance_result.html", {
+                "title": "QR Verification",
+                "message": "Registration is not completed (payment pending).",
+                "profile": profile,
+                "reg": reg,
+            })
+
+        # Check for substitution
+        substitution = SubstitutionRequest.objects.filter(
+            target_profile=profile,
+            new_registration=reg,
+            status="accepted",
+            fee_collected=False,
+        ).first()
+
+        if substitution:
+            cancellation_fee = reg.yatra.cancellation_fee
+            substitution_fee = reg.yatra.substitution_fee
+            amount_to_collect = cancellation_fee + substitution_fee
+
+            return render(request, "attendance_result.html", {
+                "title": "Substitution Detected",
+                "message": f"{profile.first_name} {profile.last_name} has been substituted.",
+                "substitution": True,
+                "amount_to_collect": amount_to_collect,
+                "cancellation_fee": cancellation_fee,
+                "substitution_fee": substitution_fee,
+                "original_paid": reg.paid_amount,
+                "substitution_id": substitution.id,
+                "profile": profile,
+                "reg": reg,
+                "substitution_obj": substitution,  # optional, for extra info if needed
+            })
+
+        # Normal attendance marking
+        reg.status = "attended"
+        reg.save()
+
+        return render(request, "attendance_result.html", {
+            "title": "Attendance Marked",
+            "message": f"{profile.first_name} {profile.last_name}'s attendance has been marked successfully.",
+            "profile": profile,
+            "reg": reg,
+        })
+    
+    def post(self, request, registration_id):
+        try:
+            reg = YatraRegistration.objects.get(id=registration_id)
+        except YatraRegistration.DoesNotExist:
+            return JsonResponse({
+                "success": False,
+                "message": "Registration not found."
+            })
+
+        profile = reg.registered_for
+
+        # Prevent re-attendance
+        if reg.status == "attended":
+            return JsonResponse({
+                "success": True,
+                "message": "Attendance already marked."
+            })
+
+        if reg.status != "paid":
+            return JsonResponse({
+                "success": False,
+                "message": "Registration incomplete (payment pending)."
+            })
+
+        # Substitution case
+        substitution = SubstitutionRequest.objects.filter(
+            new_registration=reg,
+            status="accepted",
+            fee_collected=False,
+        ).first()
+
+        if substitution:
+            substitution.fee_collected = True
+            substitution.save()
+
+        reg.status = "attended"
+        reg.save()
+
+        return JsonResponse({
+            "success": True,
+            "message": "Attendance marked successfully."
+        })

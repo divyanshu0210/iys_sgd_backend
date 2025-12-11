@@ -25,6 +25,9 @@ class SubstitutionRequest(models.Model):
     note = models.TextField(blank=True, default="")  # optional note
     amount_paid = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     processed_by = models.ForeignKey(Profile, null=True, blank=True, on_delete=models.SET_NULL) #it wont be processed by admin but by themselves
+    fee_collected = models.BooleanField(default=False)
+    new_registration = models.ForeignKey(YatraRegistration, on_delete=models.CASCADE, related_name="new_reg",null=True, blank=True)
+
 
     class Meta:
         indexes = [

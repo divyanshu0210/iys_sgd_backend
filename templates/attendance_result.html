@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ title }}</title>
+
+<style>
+    /* Reset & Base */
+    body {
+        font-family: 'Segoe UI', Arial, sans-serif;
+        margin: 0;
+        padding: 16px;
+        background: #f5f5f5;
+        color: #333;
+    }
+
+    .card {
+        max-width: 480px;
+        margin: 16px auto;
+        background: #fff;
+        padding: 20px;
+        border-radius: 12px;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+        text-align: center;
+    }
+
+    /* Profile Header */
+    .profile-header {
+        margin-bottom: 20px;
+    }
+
+    .profile-photo,
+    .avatar-placeholder {
+        width: 100px;
+        height: 100px;
+        border-radius: 50%;
+        object-fit: cover;
+        margin-bottom: 10px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 36px;
+        font-weight: bold;
+        background: #e2e8f0;
+        color: #64748b;
+        border: 3px solid #d1d5db;
+    }
+
+    .profile-name {
+        font-size: 20px;
+        font-weight: 600;
+        margin: 0;
+        word-break: break-word;
+    }
+
+    /* Details Table */
+    .details-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+        margin: 16px 0;
+        text-align: left;
+    }
+
+    .details-table th,
+    .details-table td {
+        padding: 8px 10px;
+        border-bottom: 1px solid #e2e8f0;
+    }
+
+    .details-table th {
+        width: 40%;
+        color: #475569;
+        font-weight: 500;
+        background: #f1f5f9;
+    }
+
+    .details-table td {
+        color: #1e293b;
+        word-break: break-word;
+    }
+
+    .status-partial {
+        color: #d97706;
+        font-weight: bold;
+    }
+
+    /* Message & Title */
+    .title {
+        font-size: 18px;
+        font-weight: 600;
+        margin: 16px 0 8px;
+    }
+
+    .msg {
+        font-size: 14px;
+        line-height: 1.4;
+        margin-bottom: 12px;
+    }
+
+    .success {
+        color: #059669;
+        font-weight: 500;
+    }
+
+    .danger {
+        color: #dc2626;
+        font-weight: 500;
+    }
+
+    /* Info Box */
+    .info-box {
+        background: #f1f5f9;
+        padding: 12px;
+        border-radius: 8px;
+        text-align: left;
+        font-size: 14px;
+        margin-bottom: 12px;
+    }
+
+    .fee-row {
+        display: flex;
+        justify-content: space-between;
+        margin: 4px 0;
+    }
+
+    .bold { font-weight: 600; }
+
+    hr {
+        border: none;
+        border-top: 1px solid #e2e8f0;
+        margin: 8px 0;
+    }
+
+    /* Button */
+    .btn {
+        width: 100%;
+        padding: 12px 0;
+        background: #2563eb;
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        margin-top: 8px;
+        transition: background 0.2s ease;
+    }
+
+    .btn:hover {
+        background: #1d4ed8;
+    }
+
+    /* Responsive */
+    @media (max-width: 400px) {
+        .card {
+            padding: 16px;
+        }
+
+        .profile-photo,
+        .avatar-placeholder {
+            width: 80px;
+            height: 80px;
+            font-size: 28px;
+        }
+
+        .profile-name {
+            font-size: 18px;
+        }
+
+        .details-table th,
+        .details-table td {
+            padding: 6px 8px;
+            font-size: 13px;
+        }
+
+        .title {
+            font-size: 16px;
+        }
+
+        .msg {
+            font-size: 13px;
+        }
+    }
+</style>
+</head>
+<body>
+
+<div class="card">
+
+    <div class="profile-header">
+        {% if profile.profile_picture %}
+            <img src="{{ profile.profile_picture.url }}" alt="{{ profile }}" class="profile-photo">
+        {% else %}
+            <div class="avatar-placeholder">
+                {{ profile.first_name|slice:":1"|upper }}
+            </div>
+        {% endif %}
+        <h2 class="profile-name">{{ profile.first_name }} {{ profile.last_name }}</h2>
+    </div>
+
+    <table class="details-table">
+        <tr><th>Member ID</th><td>{{ profile.formatted_member_id|default:"—" }}</td></tr>
+        <tr><th>Name</th><td>{{ profile.first_name }} {{ profile.last_name }}</td></tr>
+        <tr><th>Gender</th><td>{{ profile.get_gender_display|default:"—" }}</td></tr>
+        <tr><th>DOB</th><td>{{ profile.dob|date:"d M Y"|default:"—" }}</td></tr>
+        <tr><th>Mobile</th><td>{{ profile.mobile|default:"—" }}</td></tr>
+        <tr><th>Email</th><td>{{ profile.user.email|default:"—" }}</td></tr>
+        <tr><th>Center</th><td>{{ profile.center|default:"—" }}</td></tr>
+        <tr><th>Mentor</th><td>{{ profile.mentor|default:"None" }}</td></tr>
+        <tr><th>Registration ID</th><td>{{ reg.id }}</td></tr>
+
+        <tr><th>Status</th>
+            <td id="status-text">
+                {% if reg.status == "partial" %}
+                    <span class="status-partial">Partial (₹{{ reg.paid_amount|default:"0" }} paid)</span>
+                {% else %}
+                    {{ reg.status|capfirst }}
+                {% endif %}
+            </td>
+        </tr>
+
+        <tr><th>Amount Paid</th><td>₹{{ reg.paid_amount|default:"0" }}</td></tr>
+    </table>
+
+    <div class="title">{{ title }}</div>
+    <div class="msg">
+        {% if substitution %}
+            <p class="danger">{{ message }}<br>Collect fees before marking attendance.</p>
+        {% else %}
+            <p class="success">{{ message }}</p>
+        {% endif %}
+    </div>
+
+    {% if substitution %}
+        <div class="info-box">
+            <div class="fee-row"><span>Cancellation Fee</span><span>₹{{ cancellation_fee }}</span></div>
+            <div class="fee-row"><span>Substitution Fee</span><span>₹{{ substitution_fee }}</span></div>
+            <hr>
+            <div class="fee-row"><span>Total Due</span><span class="bold">₹{{ amount_to_collect }}</span></div>
+            <div class="fee-row"><span>Previously Paid</span><span>₹{{ original_paid }}</span></div>
+        </div>
+
+        <button id="attendance-btn" class="btn">Mark Attendance</button>
+    {% endif %}
+
+</div>
+
+<script>
+const btn = document.getElementById("attendance-btn");
+
+if (btn) {
+    btn.onclick = async () => {
+        const csrfToken = "{{ csrf_token }}";
+
+        try {
+            const response = await fetch("", {
+                method: "POST",
+                headers: {
+                    "X-CSRFToken": csrfToken,
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ ajax: true })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                // 1. Update the status field
+                document.getElementById("status-text").innerHTML = "Attended";
+
+                // 2. Remove the substitution fee box
+                const infoBox = document.querySelector(".info-box");
+                if (infoBox) infoBox.remove();
+
+                // 3. Remove the button
+                btn.remove();
+
+                // 4. Replace the message area with the success message
+                const msgDiv = document.querySelector(".msg");
+                msgDiv.innerHTML = `<p class="success">${data.message}</p>`;
+
+            } else {
+                // Show error in the same message container
+                const msgDiv = document.querySelector(".msg");
+                msgDiv.innerHTML = `<p class="danger">${data.message || "Failed to mark attendance."}</p>`;
+            }
+
+        } catch (error) {
+            const msgDiv = document.querySelector(".msg");
+            msgDiv.innerHTML = `<p class="danger">Something went wrong. Please try again.</p>`;
+            console.error(error);
+        }
+    };
+}
+</script>
+
+</body>
+</html>

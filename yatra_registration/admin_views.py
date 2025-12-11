@@ -13,7 +13,7 @@ from .models import *
 def bulk_edit_view(request, yatra_id):
     yatra = get_object_or_404(Yatra, id=yatra_id)
 
-    registrations = YatraRegistration.objects.filter(yatra=yatra).select_related(
+    registrations = YatraRegistration.objects.filter(yatra=yatra,status__in=["partial", "paid", "attended"]).select_related(
         'registered_for'
     ).prefetch_related(
         'accommodation_allocations__accommodation',
