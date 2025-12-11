@@ -39,12 +39,7 @@ class ProfileView(APIView):
         """Create or update profile; handle mentor requests automatically"""
         profile, created = Profile.objects.get_or_create(user=request.user)
         old_mentor = profile.mentor
-        serializer = ProfileSerializer(profile, data=request.data, partial=True, context={'request': request})
-
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        updated_profile = serializer.save()
+     
 
         # ✅ Handle mentor change (by member_id)
         new_mentor_member_id = request.data.get('mentor')
@@ -63,7 +58,7 @@ class ProfileView(APIView):
                 if new_mentor == profile:
                     return Response({"mentor": "You cannot assign yourself as mentor."},
                                     status=status.HTTP_400_BAD_REQUEST)
-
+                profile.mentor = new_mentor
                 # ✅ Create or update mentor request
                 MentorRequest.objects.get_or_create(from_user=profile, to_mentor=new_mentor)
 
@@ -82,6 +77,12 @@ class ProfileView(APIView):
                 #         recipient_list=[new_mentor.user.email],
                 #         fail_silently=True,
                 #     )
+
+            serializer = ProfileSerializer(profile, data=request.data, partial=True, context={'request': request})
+            if not serializer.is_valid():
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+            updated_profile = serializer.save()
 
         return Response(serializer.data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 

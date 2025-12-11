@@ -70,6 +70,7 @@ INSTALLED_APPS = [
     'yatra_registration',
     'payment',
     'storages',
+    'yatra_substitution',
 ]
 SITE_ID = 1
 

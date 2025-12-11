@@ -10,5 +10,6 @@ urlpatterns = [
     path('<uuid:yatra_id>/<uuid:profile_id>/registrations/', 
         YatraRegistrationDetailView.as_view(), 
         name='yatra-registration-detail'),
+    path('mark-attendance/<uuid:registration_id>/', MarkAttendanceView.as_view(), name='mark-attendance'),
 
 ]

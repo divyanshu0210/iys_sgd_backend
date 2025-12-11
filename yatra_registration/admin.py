@@ -165,32 +165,49 @@ class YatraRegistrationAdmin(admin.ModelAdmin):
     @admin.display(description="Status", ordering='status')
     def registration_status(self, obj):
         status_map = {
-            'paid': {
-                'text': 'CONFIRMED',
-                'bg': '#d4edda',
-                'color': '#155724',
-                'icon': '✓'
+            'pending': {
+                'text': 'NOT STARTED',
+                'bg': '#e2e3e5',      # light gray
+                'color': '#383d41',   # dark gray
+                'icon': '○'
             },
             'partial': {
                 'text': 'INCOMPLETE',
-                'bg': '#fff3cd',
-                'color': '#856404',
+                'bg': '#fff3cd',      # light yellow
+                'color': '#856404',   # amber/brown
                 'icon': '●'
             },
-            'pending': {
-                'text': 'NOT STARTED',
-                'bg': '#e2e3e5',
-                'color': '#383d41',
-                'icon': '○'
+            'paid': {
+                'text': 'CONFIRMED',
+                'bg': '#d4edda',      # light green
+                'color': '#155724',   # dark green
+                'icon': '✓'
+            },
+            'substituted': {
+                'text': 'SUBSTITUTED',
+                'bg': '#cce5ff',      # light blue
+                'color': '#004085',   # dark blue
+                'icon': '⇄'           # double arrow (substitution symbol)
+            },
+            'refunded': {
+                'text': 'REFUNDED',
+                'bg': '#f8d7da',      # light red
+                'color': '#721c24',   # dark red
+                'icon': '↩'           # left arrow (refund symbol)
             },
             'cancelled': {
                 'text': 'CANCELLED',
-                'bg': '#f8d7da',
+                'bg': '#f8d7da',      # same light red as refunded (both negative)
                 'color': '#721c24',
                 'icon': '✗'
             },
+            'attended': {
+                'text': 'ATTENDED',
+                'bg': '#d1ecf1',      # light cyan
+                'color': '#0c5460',   # dark teal
+                'icon': '✓✓'          # double check (completed/attended)
+            },
         }
-
         config = status_map.get(obj.status, status_map['pending'])
         
         return format_html(

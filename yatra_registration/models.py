@@ -37,13 +37,20 @@ class YatraRegistration(models.Model):
             ('pending', 'Not Started'),
             ('partial', 'Incomplete'),
             ('paid', 'Confirmed'),
-            ('cancelled', 'Cancelled')
+            ('substituted', 'Substituted '),
+            ('refunded', 'Refunded'),
+            ('cancelled', 'Cancelled'),
+            ('attended', 'Attended'),
         ],
         default='pending'
     )
     form_data = models.JSONField(default=dict, blank=True)
     registered_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    #the following fields are for substitution and cancellation tracking
+    substituted_to = models.ForeignKey(Profile, null=True, blank=True, on_delete=models.SET_NULL, related_name="substituted_from")
+    substitution_date = models.DateTimeField(null=True, blank=True)
+    cancellation_date = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         unique_together = ('yatra', 'registered_for')
@@ -168,3 +175,5 @@ class RegistrationCustomFieldValue(models.Model):
 
     class Meta:
         unique_together = ('registration', 'custom_field')
+
+

@@ -549,7 +549,74 @@ class YatraRegistrationView(APIView):
             'registrations': YatraRegistrationSerializer(created_or_updated, many=True).data
         }, status=status.HTTP_200_OK if created_or_updated else status.HTTP_400_BAD_REQUEST)
 
-    
+    def delete(self, request, yatra_id):
+        """
+        Cancel an existing registration.
+        Expected input:
+        {
+            "profile_id": "<profile_uuid>"
+        }
+        """
+        profile_id = request.data.get("profile_id")
+        if not profile_id:
+            return Response({"error": "profile_id is required"}, status=400)
+
+        yatra = get_object_or_404(Yatra, id=yatra_id)
+        profile = get_object_or_404(Profile, id=profile_id)
+        requester = request.user.profile
+
+        # ---- 1. Fetch registration ----
+        try:
+            registration = YatraRegistration.objects.get(
+                yatra=yatra,
+                registered_for=profile
+            )
+        except YatraRegistration.DoesNotExist:
+            return Response({"error": "Registration not found"}, status=404)
+        
+        if registration.status == "attended":
+            return Response(
+                {"error": "Cannot cancel. Devotee has already attended the Yatra."},
+                status=400
+            )
+
+        # ---- 2. Check permission ----
+        # Self cancel
+        if requester == profile:
+            allowed = True
+
+        # Mentor cancel
+        elif MentorRequest.objects.filter(
+            from_user=profile,
+            to_mentor=requester,
+            is_approved=True
+        ).exists():
+            allowed = True
+
+        # Admin cancel
+        elif requester.user.is_staff:
+            allowed = True
+
+        else:
+            return Response(
+                {"error": "You are not allowed to cancel this registration."},
+                status=403
+            )
+        
+        # ---- 4. Mark registration as cancelled ----
+        registration.status = "cancelled"
+        registration.save()
+
+        # ---- 5. Delete allocations ----
+        # registration.accommodation_allocations.all().delete()
+        # registration.journey_allocations.all().delete()
+        # registration.custom_values.all().delete()
+
+        return Response({
+            "message": "Registration cancelled successfully.",
+            "registration_id": str(registration.id),
+            "status": "cancelled"
+        }, status=200)
     
     def _check_eligibility(self, yatra, profile, registrant):
         """Check if profile is eligible for registration"""
@@ -618,3 +685,27 @@ class YatraRegistrationDetailView(APIView):
                 ],
             }
             return Response(blank_data, status=status.HTTP_200_OK)
+
+
+
+class MarkAttendanceView(APIView):
+    # authentication_classes = []   # 🚀 No authentication required     
+    # permission_classes = [AllowAny] 
+    permission_classes = [IsAdminUser]  # only superusers
+
+    def get(self, request, registration_id):
+
+        registration = get_object_or_404(YatraRegistration, id=registration_id)
+        
+        if registration.status == "attended":
+            return Response({"message": "Already marked"}, status=status.HTTP_200_OK)
+        elif registration.status != "paid":
+            return Response({"message": "Registration is not completed"}, status=status.HTTP_200_OK)
+
+        # registration.status = 'attended'
+        # registration.save()
+
+        return Response({
+             "message": f"{registration.registered_for.first_name} {registration.registered_for.last_name} marked as attended",
+            "status": registration.status
+        }, status=status.HTTP_200_OK)
