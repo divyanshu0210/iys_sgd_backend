@@ -78,11 +78,11 @@ class ProfileView(APIView):
                 #         fail_silently=True,
                 #     )
 
-            serializer = ProfileSerializer(profile, data=request.data, partial=True, context={'request': request})
-            if not serializer.is_valid():
-                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        serializer = ProfileSerializer(profile, data=request.data, partial=True, context={'request': request})
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-            updated_profile = serializer.save()
+        updated_profile = serializer.save()
 
         return Response(serializer.data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 

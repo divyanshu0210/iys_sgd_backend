@@ -26,7 +26,7 @@ class YatraSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'title', 'description', 'start_date', 'end_date',
             'location', 'capacity', 'is_registration_open','payment_upi_id',    
-            'form_fields', 'installments' , 'substitution_fee', 'cancellation_fee'
+            'form_fields', 'installments' , 'substitution_fee', 'cancellation_fee','is_rcs_download_open','is_substitution_open',
         ]
 
 class AccommodationSerializer(serializers.ModelSerializer):

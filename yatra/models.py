@@ -14,8 +14,10 @@ class Yatra(models.Model):
     end_date = models.DateField()
     location = models.CharField(max_length=255)
     capacity = models.IntegerField()
-    is_registration_open = models.BooleanField(default=True)  # ✅ New field
-    payment_upi_id = models.CharField(max_length=255, blank=True, null=True,default="")  # ✅ New field for UPI ID
+    is_registration_open = models.BooleanField(default=True) 
+    is_rcs_download_open = models.BooleanField(default=False) 
+    is_substitution_open = models.BooleanField(default=False) 
+    payment_upi_id = models.CharField(max_length=255, blank=True, null=True,default="")  
     substitution_fee = models.DecimalField(max_digits=10, decimal_places=2, default=500)
     cancellation_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     created_at = models.DateTimeField(auto_now_add=True)
