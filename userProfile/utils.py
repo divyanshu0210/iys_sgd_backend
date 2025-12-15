@@ -3,9 +3,9 @@ from userProfile.models import Profile
 
 
 CENTER_CODE_MAP = {
-    "vrindavan base": "1",
-    "mayapur base": "2",
-    "giri govardhan base": "3",
+    "vrindavan bace": "1",
+    "mayapur bace": "2",
+    "giri govardhan bace": "3",
     "temple vta": "4",
     "temple brahmachari": "5",
 }

@@ -17,23 +17,6 @@ from django.http import HttpResponse
 import logging
 
 
-def generate_upi_qr(upi_id, amount, name, note="Yatra Payment"):
-    upi_url = f"upi://pay?pa={upi_id}&pn={name}&am={amount}&cu=INR&tn={note}"
-    qr = qrcode.QRCode(version=1, box_size=10, border=4)
-    qr.add_data(upi_url)
-    qr.make(fit=True)
-    img = qr.make_image(fill_color="black", back_color="white")
-    
-    buffer = BytesIO()
-    img.save(buffer, format='PNG')
-    return buffer.getvalue()
-
-def upi_qr_view(request):
-    amount = request.GET.get('amount')
-    upi_id = request.GET.get('upi_id')
-    qr_img = generate_upi_qr(upi_id, amount, "ISKCON Yatra")
-    return HttpResponse(qr_img, content_type="image/png")
-
 logger = logging.getLogger(__name__)
 
 class BatchPaymentProofView(APIView):
