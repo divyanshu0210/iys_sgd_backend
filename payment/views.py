@@ -4,7 +4,7 @@ from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.shortcuts import get_object_or_404
-from rest_framework.decorators import api_view,permission_classes
+from rest_framework.decorators import api_view,permission_classes,authentication_classes
 from django.db import transaction
 from django.core.mail import send_mail
 from django.conf import settings
@@ -20,6 +20,7 @@ from rest_framework import status, permissions
 
 @api_view(["GET"])
 @permission_classes([permissions.AllowAny])
+@authentication_classes([])
 def keep_alive(request):
     return Response({"message": "Hi"})
 
