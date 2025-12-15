@@ -4,6 +4,7 @@ from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.shortcuts import get_object_or_404
+from rest_framework.decorators import api_view
 from django.db import transaction
 from django.core.mail import send_mail
 from django.conf import settings
@@ -15,6 +16,10 @@ import qrcode # type: ignore
 from io import BytesIO
 from django.http import HttpResponse
 import logging
+
+@api_view(["GET"])
+def keep_alive(request):
+    return Response({"message": "Hi"})
 
 
 logger = logging.getLogger(__name__)
