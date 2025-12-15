@@ -34,7 +34,9 @@ class Profile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
 
     # 🔹 Sequential 6-digit member ID
-    member_id = models.PositiveIntegerField(unique=True, editable=False)
+    # member_id = models.PositiveIntegerField(unique=True, editable=False)
+    member_id = models.PositiveIntegerField(unique=True, editable=False, null=True, blank=True)
+
 
     # 🔹 User Type
     USER_TYPE_CHOICES = [
@@ -67,7 +69,7 @@ class Profile(models.Model):
     ]
     marital_status = models.CharField(max_length=20, choices=marital_status_choices, blank=True, null=True)
 
-    mobile = models.CharField(max_length=15, blank=True, null=True)
+    mobile = models.CharField(max_length=15, blank=True, null=True, unique=True)
     aadhar_card_no = models.CharField(max_length=12, blank=True, null=True, unique=True)
     country = models.CharField(max_length=100, blank=True, null=True)
     center = models.CharField(max_length=150, blank=True, null=True)
@@ -100,15 +102,15 @@ class Profile(models.Model):
         """Return member_id as 6-digit string (e.g., 000123)."""
         return f"{self.member_id:06d}"
 
-    def save(self, *args, **kwargs):
-        if not self.member_id:
-            with transaction.atomic():
-                last_profile = Profile.objects.select_for_update().order_by('-member_id').first()
-                next_id = (last_profile.member_id + 1) if last_profile else 1
-                if next_id > 999999:
-                    raise ValueError("Member ID limit reached (max 999999)")
-                self.member_id = next_id
-        super().save(*args, **kwargs)
+    # def save(self, *args, **kwargs):
+    #     if not self.member_id:
+    #         with transaction.atomic():
+    #             last_profile = Profile.objects.select_for_update().order_by('-member_id').first()
+    #             next_id = (last_profile.member_id + 1) if last_profile else 1
+    #             if next_id > 999999:
+    #                 raise ValueError("Member ID limit reached (max 999999)")
+    #             self.member_id = next_id
+    #     super().save(*args, **kwargs)
 
     
 
