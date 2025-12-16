@@ -5,7 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view,permission_classes,authentication_classes
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.core.mail import send_mail
 from django.conf import settings
 from yatra_registration.models import *
@@ -44,16 +44,30 @@ class BatchPaymentProofView(APIView):
         logger.debug(f"Validated data: {data}")
 
         # --- Step 1: Create or get Payment record ---
-        payment, created = Payment.objects.get_or_create(
-            total_amount=data["total_amount"],
-            transaction_id=data["transaction_id"],
-            uploaded_by=request.user.profile,
-        )
-
-        if created:
+        # payment, created = Payment.objects.get_or_create(
+        #     total_amount=data["total_amount"],
+        #     transaction_id=data["transaction_id"],
+        #     uploaded_by=request.user.profile,
+        # )
+        try:
+            payment = Payment.objects.create(
+                transaction_id=data["transaction_id"],
+                total_amount=data["total_amount"],
+                uploaded_by=request.user.profile,
+            )
             logger.info(f"Created new Payment: id={payment.id}, txn={payment.transaction_id}, amount={payment.total_amount}")
-        else:
-            logger.warning(f"Reused existing Payment: id={payment.id}, txn={payment.transaction_id}")
+
+        except IntegrityError:
+            return Response(
+                {
+                    "error": "This transaction ID has already been used."
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # if created:
+        # else:
+        #     logger.warning(f"Reused existing Payment: id={payment.id}, txn={payment.transaction_id}")
 
         linked_count = 0
 
@@ -111,7 +125,7 @@ class BatchPaymentProofView(APIView):
             "payment_id": str(payment.id),
             "linked_installments": linked_count,
             "message": f"✅ Payment entry created and linked to {linked_count} installments successfully. Please upload proof next."
-        }, status=status.HTTP_201_CREATED)
+        }, status=status.HTTP_201_CREATED)  
     
 
 class UploadPaymentScreenshotView(APIView):
