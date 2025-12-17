@@ -16,8 +16,9 @@ from allauth.account.views import ConfirmEmailView
 from django.shortcuts import redirect
 from django.http import Http404
 from django.conf import settings
+import logging
 
-
+logger = logging.getLogger(__name__)
 class CustomConfirmEmailView(ConfirmEmailView):
     def get(self, request, *args, **kwargs):
         try:
@@ -42,12 +43,19 @@ class PasswordResetRequestView(APIView):
 
         reset_link = f"{settings.FRONTEND_BASE_URL}reset-password/{uid}/{token}"
 
-        send_mail(
-            subject="Password Reset",
-            message=f"Click the link to reset password:\n{reset_link}",
-            from_email=f'{settings.DEFAULT_FROM_EMAIL}',
-            recipient_list=[email],
-        )
+        try:
+            send_mail(
+                subject="Password Reset",
+                message=f"Click the link to reset password:\n{reset_link}",
+                from_email=f'{settings.DEFAULT_FROM_EMAIL}',
+                recipient_list=[email],
+            )
+        except Exception as e:
+            logger.exception("Password reset email failed")
+            return Response(
+                {"detail": "Unable to send email. Please try again later."},
+                status=500
+            )
 
         return Response(
             {"message": "Password reset link sent"},
