@@ -2,6 +2,8 @@
 from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
 from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied
+from allauth.account.models import EmailAddress
+from django.conf import settings
 
 User = get_user_model()
 
@@ -17,10 +19,22 @@ class MySocialAccountAdapter(DefaultSocialAccountAdapter):
         try:
             # check if user already exists
             user = User.objects.get(email=email)
-            # connect this social account to existing user
-            sociallogin.connect(request, user)
+            
         except User.DoesNotExist:
             # pass  # new user → normal flow
             raise PermissionDenied(
                 "Account doesn’t exist. Sign up to create a new account."
             )
+        
+        if settings.ACCOUNT_EMAIL_VERIFICATION == "mandatory":
+            email_address = EmailAddress.objects.filter(
+                user=user, email=email
+            ).first()
+
+            if not email_address or not email_address.verified:
+                raise PermissionDenied(
+                    "E-mail not verified. Please complete signup process."
+                )
+
+        # connect this social account to existing user
+        sociallogin.connect(request, user)
