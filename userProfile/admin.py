@@ -86,6 +86,23 @@ class ProfileAdmin(admin.ModelAdmin):
         return True  # Still show in admin menu
 
 
+class MentorOnlyFilter(admin.SimpleListFilter):
+    title = "Mentor"
+    parameter_name = "to_mentor"
+
+    def lookups(self, request, model_admin):
+        # Only mentors appear in filter list
+        mentors = Profile.objects.filter(user_type="mentor")
+        return [
+            (mentor.id, f"({mentor.formatted_member_id()}) {mentor}")
+            for mentor in mentors
+        ]
+
+    def queryset(self, request, queryset):
+        if self.value():
+            return queryset.filter(to_mentor_id=self.value())
+        return queryset
+
 
 @admin.register(MentorRequest)
 class MentorRequestAdmin(admin.ModelAdmin):
@@ -96,7 +113,7 @@ class MentorRequestAdmin(admin.ModelAdmin):
         'from_user__member_id',
         'to_mentor__member_id',
     )
-    list_filter = ('is_approved', 'created_at','approved_at','to_mentor')
+    list_filter = ('is_approved', 'created_at','approved_at',MentorOnlyFilter)
     ordering = ('-created_at',)
 
     
@@ -106,4 +123,6 @@ class MentorRequestAdmin(admin.ModelAdmin):
     # Optional: also hide from change/view pages of related models
     def has_module_permission(self, request):
         return True  # Still show in admin menu
+
+
 

@@ -50,14 +50,22 @@ class ProfileView(APIView):
             except (TypeError, ValueError):
                 return Response({"mentor": "Invalid mentor member_id."}, status=status.HTTP_400_BAD_REQUEST)
 
-            # Only trigger if mentor actually changed
-            if not old_mentor or old_mentor.member_id != new_mentor_member_id:
-                new_mentor = get_object_or_404(Profile, member_id=new_mentor_member_id)
+            new_mentor = get_object_or_404(Profile, member_id=new_mentor_member_id)
 
-                # ✅ Prevent users from choosing themselves as mentor
-                if new_mentor == profile:
+            if new_mentor == profile:
                     return Response({"mentor": "You cannot assign yourself as mentor."},
                                     status=status.HTTP_400_BAD_REQUEST)
+            
+            if new_mentor.user_type != "mentor":
+                return Response(
+                    {"mentor": "Selected user is not a mentor."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            # Only trigger if mentor actually changed
+            if not old_mentor or old_mentor.member_id != new_mentor_member_id:
+
+                # ✅ Prevent users from choosing themselves as mentor
+                
                 profile.mentor = new_mentor
                 # ✅ Create or update mentor request
                 MentorRequest.objects.get_or_create(from_user=profile, to_mentor=new_mentor)
