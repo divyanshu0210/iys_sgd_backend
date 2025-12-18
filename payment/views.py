@@ -12,7 +12,6 @@ from yatra_registration.models import *
 from .models import *
 from .serializers import *
 from yatra.models import *
-import qrcode # type: ignore
 from io import BytesIO
 from django.http import HttpResponse
 import logging
