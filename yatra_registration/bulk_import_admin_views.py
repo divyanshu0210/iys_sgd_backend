@@ -9,6 +9,24 @@ from yatra_registration.models import YatraEligibility, YatraRegistration, Yatra
 from payment.models import Payment
 from userProfile.models import Profile
 import openpyxl
+def normalize_mobile(value):
+    """
+    Converts Excel / DB mobile values to clean string digits.
+    Handles floats like 9765409147.0 safely.
+    """
+    if value is None:
+        return ""
+
+    value = str(value).strip()
+
+    # Remove trailing .0 from Excel floats
+    if value.endswith(".0"):
+        value = value[:-2]
+
+    # Keep only digits (optional but safe)
+    value = "".join(ch for ch in value if ch.isdigit())
+
+    return value
 
 def yatra_bulk_offline_import(request, yatra_id):
     print("=== Starting yatra_bulk_offline_import ===")
@@ -47,7 +65,7 @@ def yatra_bulk_offline_import(request, yatra_id):
                 if len(row) < 13:
                     print("Skipping row (not enough columns):", row)
                     continue
-                mobile = str(row[3]).strip() if row[3] else ""
+                mobile = normalize_mobile(row[3])
                 payment_text = str(row[11]).strip() if row[11] else ""
                 screenshot_url = str(row[12]).strip() if row[12] else ""
 
@@ -60,7 +78,7 @@ def yatra_bulk_offline_import(request, yatra_id):
 
             # Match by mobile
             for profile in profiles:
-                mobile_key = str(profile.mobile or "").strip()
+                mobile_key = normalize_mobile(profile.mobile)
                 if mobile_key and mobile_key in profile_excel_map:
                     profile_excel_map[str(profile.id)] = profile_excel_map.pop(mobile_key)
             print("Profile Excel map after matching by mobile:", profile_excel_map)

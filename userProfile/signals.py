@@ -1,5 +1,5 @@
 # userProfile/signals.py
-from django.db.models.signals import post_save
+from django.db.models.signals import post_save , pre_save
 from django.dispatch import receiver
 from django.contrib.auth.models import User
 from django.db import transaction
@@ -53,45 +53,97 @@ def create_or_update_user_profile(sender, instance, created, **kwargs):
 from .models import MentorRequest
 
 
-@receiver(post_save, sender=MentorRequest)
+# @receiver(post_save, sender=MentorRequest)
+# def update_mentee_on_approval(sender, instance, **kwargs):
+#     """
+#     Update mentee's profile when a MentorRequest is approved or unapproved.
+#     Works for both API and admin changes.
+#     """
+#     if not instance.pk:
+#         # New request, nothing to do yet
+#         return
+#     mentee = instance.from_user
+
+#     approval_year = timezone.now().year % 100  # YY
+#     center_name = (mentee.center or "").lower().strip()
+#     center_code = CENTER_CODE_MAP.get(
+#         center_name,
+#         DEFAULT_OTHER_CENTER_CODE)
+
+#     if instance.is_approved:
+#         with transaction.atomic():
+#             new_member_id = generate_member_id(
+#                 year=f"{approval_year:02d}",
+#                 center_code=center_code
+#             )
+
+#             mentee.member_id = new_member_id
+#             mentee.mentor = instance.to_mentor
+#             mentee.user_type = "devotee"
+#             mentee.save(update_fields=["member_id", "mentor", "user_type"])
+#         # mentee.mentor = instance.to_mentor
+#         # mentee.user_type = 'devotee'
+#         # mentee.save(update_fields=['mentor', 'user_type'])
+        
+#     elif not instance.is_approved:
+#         if mentee.mentor == instance.to_mentor:
+#             with transaction.atomic():
+#                 mentee.member_id = generate_member_id(
+#                             year=f"{approval_year:02d}",
+#                             center_code=PENDING_APPROVAL_CODE
+#                         )
+#                 mentee.mentor = None
+#                 mentee.user_type = 'guest'
+#                 mentee.save(update_fields=['mentor', 'user_type',"member_id"])
+
+
+
+@receiver(pre_save, sender=MentorRequest)
 def update_mentee_on_approval(sender, instance, **kwargs):
     """
-    Update mentee's profile when a MentorRequest is approved or unapproved.
-    Works for both API and admin changes.
+    Handle MentorRequest approval transitions safely:
+    - False -> True  : approve mentee
+    - True  -> False : unapprove mentee
     """
-    if not instance.pk:
-        # New request, nothing to do yet
-        return
-    mentee = instance.from_user
 
+    # ⛔ New request → do nothing
+    if instance._state.adding:
+        return  
+
+    # Fetch previous DB state (now guaranteed to exist)
+    previous = MentorRequest.objects.only("is_approved").get(pk=instance.pk)
+
+    # No approval change → ignore
+    if previous.is_approved == instance.is_approved:
+        return
+
+    mentee = instance.from_user
     approval_year = timezone.now().year % 100  # YY
+
     center_name = (mentee.center or "").lower().strip()
     center_code = CENTER_CODE_MAP.get(
         center_name,
-        DEFAULT_OTHER_CENTER_CODE)
+        DEFAULT_OTHER_CENTER_CODE
+    )
 
-    if instance.is_approved:
+    # ✅ Approved (False → True)
+    if not previous.is_approved and instance.is_approved:
         with transaction.atomic():
-            new_member_id = generate_member_id(
+            mentee.member_id = generate_member_id(
                 year=f"{approval_year:02d}",
                 center_code=center_code
             )
-
-            mentee.member_id = new_member_id
             mentee.mentor = instance.to_mentor
             mentee.user_type = "devotee"
             mentee.save(update_fields=["member_id", "mentor", "user_type"])
-        # mentee.mentor = instance.to_mentor
-        # mentee.user_type = 'devotee'
-        # mentee.save(update_fields=['mentor', 'user_type'])
-        
-    elif not instance.is_approved:
-        if mentee.mentor == instance.to_mentor:
-            with transaction.atomic():
-                mentee.member_id = generate_member_id(
-                            year=f"{approval_year:02d}",
-                            center_code=PENDING_APPROVAL_CODE
-                        )
-                mentee.mentor = None
-                mentee.user_type = 'guest'
-                mentee.save(update_fields=['mentor', 'user_type',"member_id"])
+
+    # ✅ Explicit unapproval (True → False)
+    elif previous.is_approved and not instance.is_approved:
+        with transaction.atomic():
+            mentee.member_id = generate_member_id(
+                year=f"{approval_year:02d}",
+                center_code=PENDING_APPROVAL_CODE
+            )
+            mentee.mentor = None
+            mentee.user_type = "guest"
+            mentee.save(update_fields=["member_id", "mentor", "user_type"])

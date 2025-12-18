@@ -8,18 +8,18 @@ from django.utils.html import format_html
 class ProfileAdmin(admin.ModelAdmin):
     list_display = (
         'formatted_member_id',
-        'id',
+        # 'id',
         'user',
         'user_type',
         'first_name',
         'last_name',
         'mobile',
-        'aadhar_card_no',
-        'country',
+        # 'aadhar_card_no',
+        # 'country',
         'center',
-        'is_initiated',
+        # 'is_initiated',
         'spiritual_master',
-        'no_of_chanting_rounds',  # ✅ Display in admin list
+        # 'no_of_chanting_rounds',  # ✅ Display in admin list
         'created_at',
     )
 
@@ -29,7 +29,7 @@ class ProfileAdmin(admin.ModelAdmin):
         'last_name',
         'mobile',
         'aadhar_card_no',
-        'country',
+        # 'country',
         'center',
         'spiritual_master',
     )
@@ -96,7 +96,7 @@ class MentorRequestAdmin(admin.ModelAdmin):
         'from_user__member_id',
         'to_mentor__member_id',
     )
-    list_filter = ('is_approved', 'created_at','approved_at')
+    list_filter = ('is_approved', 'created_at','approved_at','to_mentor')
     ordering = ('-created_at',)
 
     
