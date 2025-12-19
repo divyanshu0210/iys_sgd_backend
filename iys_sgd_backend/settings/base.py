@@ -117,7 +117,7 @@ TEMPLATES = [
 ]
 
 # WSGI_APPLICATION = 'iys_sgd_backend.wsgi.application'
-
+DB_CONN_MAX_AGE = config("DB_CONN_MAX_AGE", default=300, cast=int)
 if IS_DEBUG:
     # Use LOCAL SQLite or local MySQL (Whichever you want)
     DATABASES = {
@@ -132,9 +132,9 @@ else:
     DATABASES = {
         "default": dj_database_url.config(
             default=DATABASE_URL,
-            conn_max_age=0,
+            conn_max_age=DB_CONN_MAX_AGE,
             conn_health_checks=True,
-            ssl_require=False   # Railway MySQL doesn't require strict SSL
+            ssl_require=True
         )
         }
 

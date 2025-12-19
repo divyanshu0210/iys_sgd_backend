@@ -581,6 +581,27 @@ class YatraRegistrationView(APIView):
                 {"error": "Cannot cancel. Devotee has already attended the Yatra."},
                 status=400
             )
+        
+        active_substitution = (
+            SubstitutionRequest.objects
+            .filter(
+                registration=registration,
+                initiator=profile,
+                status="pending",
+                expires_at__gt=timezone.now()
+            )
+            .order_by("-created_at")
+            .first()
+        )
+
+        if active_substitution:
+            return Response(
+                {
+                    "error": "Cancellation not allowed while a substitution request is active.",
+                    "substitution_request_id": str(active_substitution.id)
+                },
+                status=400
+            )
 
         # ---- 2. Check permission ----
         # Self cancel
