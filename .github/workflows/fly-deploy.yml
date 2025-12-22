@@ -9,7 +9,6 @@ jobs:
   deploy-api:
     name: Deploy API
     runs-on: ubuntu-latest
-    concurrency: deploy-api
     steps:
       - uses: actions/checkout@v4
       - uses: superfly/flyctl-actions/setup-flyctl@master
@@ -20,7 +19,6 @@ jobs:
   deploy-admin:
     name: Deploy Admin
     runs-on: ubuntu-latest
-    concurrency: deploy-admin
     steps:
       - uses: actions/checkout@v4
       - uses: superfly/flyctl-actions/setup-flyctl@master

@@ -1,6 +1,9 @@
 app = "iys-sgd-api"
 primary_region = "bom"
 
+[build]
+  dockerfile = "api/Dockerfile"
+
 [deploy]
 release_command = "python manage.py migrate --noinput"
 

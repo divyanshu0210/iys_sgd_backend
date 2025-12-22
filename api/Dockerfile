@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY ../ ./
+COPY . .
 CMD python manage.py migrate && \
     python manage.py collectstatic --noinput && \
     gunicorn iys_sgd_backend.wsgi_api:application \
