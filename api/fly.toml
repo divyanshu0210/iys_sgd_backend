@@ -1,0 +1,16 @@
+app = "iys-sgd-api"
+primary_region = "bom"
+
+[deploy]
+release_command = "python manage.py migrate --noinput"
+
+[http_service]
+auto_start_machines = true
+auto_stop_machines = true
+force_https = true
+internal_port = 8_080
+min_machines_running = 0
+
+[[vm]]
+cpus = 1
+memory = "512mb"

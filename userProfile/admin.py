@@ -2,25 +2,25 @@ from django.contrib import admin
 
 from .models import *
 from django.contrib import admin
+from django.utils.timezone import localtime
 from django.utils.html import format_html
 
 @admin.register(Profile)
 class ProfileAdmin(admin.ModelAdmin):
     list_display = (
         'formatted_member_id',
-        # 'id',
+        'profile_photo_preview',
         'user',
         'user_type',
         'first_name',
         'last_name',
         'mobile',
-        # 'aadhar_card_no',
-        # 'country',
         'center',
-        # 'is_initiated',
         'spiritual_master',
-        # 'no_of_chanting_rounds',  # ✅ Display in admin list
         'created_at',
+        'mentor_display',
+        'mentor_request_approved',
+        'mentor_request_approved_at',
     )
 
     search_fields = (
@@ -76,6 +76,54 @@ class ProfileAdmin(admin.ModelAdmin):
     def formatted_member_id(self, obj):
         return f"{obj.member_id:06d}"
     formatted_member_id.short_description = "Member ID"
+
+    
+    # ---------------------------
+    # Mentor-related columns
+    # ---------------------------
+
+    def mentor_display(self, obj):
+        return obj.mentor.formatted_member_id() if obj.mentor else "-"
+    mentor_display.short_description = "Mentor ID"
+
+    def mentor_request_approved(self, obj):
+        req = MentorRequest.objects.filter(
+            from_user=obj,
+            to_mentor=obj.mentor
+        ).order_by('-created_at').first()
+
+        if not req:
+            return "—"
+
+        return "✅ Yes" if req.is_approved else "❌ No"
+    mentor_request_approved.short_description = "Mentor Approved"
+
+    def mentor_request_approved_at(self, obj):
+        req = MentorRequest.objects.filter(
+            from_user=obj,
+            to_mentor=obj.mentor,
+            is_approved=True
+        ).order_by('-approved_at').first()
+
+        if req and req.approved_at:
+            return localtime(req.approved_at).strftime("%d %b %Y, %H:%M")
+        return "—"
+    mentor_request_approved_at.short_description = "Approved At"
+
+     # ---------------------------
+    # Profile photo preview
+    # ---------------------------
+
+    def profile_photo_preview(self, obj):
+        if obj.profile_picture:
+            return format_html(
+                '<img src="{}" width="40" height="40" style="border-radius:50%; object-fit:cover;" />',
+                obj.profile_picture.url
+            )
+        return "—"
+    profile_photo_preview.short_description = "Photo"
+
+
 
     
     def has_add_permission(self, request):
