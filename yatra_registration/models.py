@@ -52,11 +52,21 @@ class YatraRegistration(models.Model):
     substitution_date = models.DateTimeField(null=True, blank=True)
     cancellation_date = models.DateTimeField(null=True, blank=True)
 
+
     class Meta:
         unique_together = ('yatra', 'registered_for')
+        indexes = [
+            models.Index(fields=['registered_at']),
+            models.Index(fields=['status']),
+            models.Index(fields=['yatra']),
+            models.Index(fields=['registered_for']),
+        ]
 
+    # def __str__(self):
+    #     return f"{self.registered_for} - {self.yatra.title}"
     def __str__(self):
-        return f"{self.registered_for} - {self.yatra.title}"
+        return f"Registration {self.id}"
+
 
     @property
     def total_amount(self):

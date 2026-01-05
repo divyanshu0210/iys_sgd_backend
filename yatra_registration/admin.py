@@ -12,6 +12,8 @@ from django import forms
 from django.contrib import admin
 from django.urls import reverse
 from django.utils.html import format_html
+from django.db.models import Prefetch
+
 
 from django.contrib.admin import SimpleListFilter
 
@@ -103,19 +105,7 @@ def custom_field_name(self, instance):
         return f"{instance.custom_field_value.custom_field.field_name}: {instance.custom_field_value.value}"
     return "-"
 
-@admin.register(YatraEligibility)
-class YatraEligibilityAdmin(admin.ModelAdmin):
-    list_display = ('yatra', 'profile', 'approved_by', 'is_approved', 'approved_at')
-    list_filter = ('is_approved', 'yatra','yatra__title', 'approved_at')
-    search_fields = ('profile__first_name', 'profile__last_name', 'yatra__title')
-    ordering = ('-approved_at',)
 
-    def has_add_permission(self, request):
-        return False
-
-    # Optional: also hide from change/view pages of related models
-    def has_module_permission(self, request):
-        return True  # Still show in admin menu
 
 class RegistrationAccommodationInline(admin.TabularInline):
     model = RegistrationAccommodation
@@ -140,22 +130,25 @@ class YatraRegistrationAdmin(admin.ModelAdmin):
         'total_amount_display',
         'paid_amount_display',
         'installments_status',
-        'registered_at',
         'accommodation_summary',
         'journey_summary',
-        'custom_field_summary',
+        'registered_at',
     )
     search_fields = (
         'yatra__title',
-        'registered_for__full_name',
         'registered_for__first_name',
         'registered_for__last_name',
-        'registered_by__full_name',
+        'registered_by__first_name',
+        'registered_by__last_name',
     )
     list_filter = (
         YatraListFilter,'status', 'registered_at')
     ordering = ('-registered_at',)
+    # list_per_page = 25            
+    # show_full_result_count = False
+
     readonly_fields = ('total_amount_display', 'paid_amount_display', 'installments_status')
+
     inlines = [
         RegistrationAccommodationInline,
         RegistrationJourneyInline,
@@ -219,94 +212,6 @@ class YatraRegistrationAdmin(admin.ModelAdmin):
             config['icon'], config['text']
         )
 
-    @admin.display(description="Accommodation")
-    def accommodation_summary(self, obj):
-        allocations = obj.accommodation_allocations.all()
-        if not allocations:
-            return "No accommodation assigned"
-
-        html = "<table style='width:100%; border-collapse:collapse; font-family:system-ui;'>"
-        html += """
-            <tr style='background:#f7f7f7; font-weight:600;'>
-                <td style='padding:8px; '>Place</td>
-                <td style='padding:8px;width:35%;'>Room/Bed</td>
-            </tr>
-        """
-
-        for idx, a in enumerate(allocations):
-            bg = "#ffffff" if idx % 2 == 0 else "#f9f9f9"
-            place = a.accommodation.place_name
-            room = a.room_number or "—"
-            bed = a.bed_number or "—"
-
-            html += f"""
-            <tr style="background:{bg}; border-bottom:1px solid #eee;">
-                <td style="padding:8px; font-weight:600;">{place}</td>
-                <td style="padding:8px;">
-                    Room: <strong>{room}</strong> <br> Bed: <strong>{bed}</strong>
-                </td>
-            </tr>
-            """
-
-        html += "</table>"
-        return format_html(html)
-
-
-    @admin.display(description="Journey")
-    def journey_summary(self, obj):
-        journeys = obj.journey_allocations.all()
-        if not journeys:
-            return "No journey assigned"
-
-        html = "<table style='width:100%; border-collapse:collapse; font-family:system-ui;'>"
-        html += """
-            <tr style='background:#f7f7f7; font-weight:600;'>
-                <td style='padding:8px; width:25%;'>Type</td>
-                <td style='padding:8px; width:45%;'>Route</td>
-                <td style='padding:8px;'>Vehicle/Seat</td>
-            </tr>
-        """
-
-        for idx, j in enumerate(journeys):
-            bg = "#ffffff" if idx % 2 == 0 else "#f9f9f9"
-            type_ = j.journey.type.upper()
-            route = f"{j.journey.from_location} → {j.journey.to_location}"
-            vehicle = j.vehicle_number or "—"
-            seat = j.seat_number or "—"
-
-            html += f"""
-            <tr style="background:{bg}; border-bottom:1px solid #eee;">
-                <td style="padding:8px; font-weight:600;">{type_}</td>
-                <td style="padding:8px;">{route}</td>
-                <td style="padding:8px;">
-                    Vehicle: <strong>{vehicle}</strong> <br/> Seat: <strong>{seat}</strong>
-                </td>
-            </tr>
-            """
-
-        html += "</table>"
-        return format_html(html)
-
-
-    @admin.display(description="Custom Fields")
-    def custom_field_summary(self, obj):
-        values = obj.custom_values.all()
-        if not values:
-            return "No additional info"
-        
-        html = "<table style='width:100%; border-collapse:collapse; font-family:system-ui;'>"
-        for v in values:
-            field = v.custom_field_value.custom_field.field_name
-            value = v.custom_field_value.value
-            html += f"""
-            <tr style="border-bottom:1px solid #eee;">
-                <td style="padding:8px; font-weight:600; width:40%;">{field}</td>
-                <td style="padding:8px;">{value}</td>
-            </tr>
-            """
-        html += "</table>"
-        return format_html(html)
-    # custom_field_summary.short_description = "Custom Fields"
 # ──────────────────────────────────────────────────────────────
 # for bulk edit view
     change_list_template = "admin/yatra_registration/bulk_edit_changelist.html"
@@ -346,77 +251,108 @@ class YatraRegistrationAdmin(admin.ModelAdmin):
 #other amount and installment methods
     # Clean display methods (no colors, no HTML)
     def total_amount_display(self, obj):
-        return f"₹{obj.total_amount}"
+        return f"₹{sum(i.amount for i in getattr(obj.yatra, '_pref_yatra_installments', []))}"  
     
     total_amount_display.short_description = "Total Amount"
     total_amount_display.admin_order_field = 'total_amount'
 
     def paid_amount_display(self, obj):
-        return f"₹{obj.paid_amount}"
-    
+        return f"₹{sum(i.installment.amount for i in getattr(obj, '_pref_installments', []) if i.is_paid)}"
     paid_amount_display.short_description = "Paid"
     paid_amount_display.admin_order_field = 'paid_amount'
 
+    @admin.display(description="Installment Status")
     def installments_status(self, obj):
-        items = []
+        def compute():
+            yatra_installments = getattr(obj.yatra, '_pref_yatra_installments', [])
+            reg_installments = {ri.installment_id: ri for ri in getattr(obj, '_pref_installments', [])}
 
-        all_yatra_installments = obj.yatra.installments.all().order_by('order')
+            items = []
+            for inst in yatra_installments:
+                ri = reg_installments.get(inst.id)
 
-        for inst in all_yatra_installments:
-            reg_inst = obj.installments.filter(installment=inst).first()
-
-            if reg_inst:
-                if reg_inst.is_paid:
-                    status = "Paid"
-                elif reg_inst.payment and not reg_inst.is_paid:
-                    status = "Verification Pending"
+                if ri:
+                    if ri.is_paid:
+                        status = "Paid"
+                    elif ri.payment:
+                        status = "Verification Pending"
+                    else:
+                        status = "Due"
                 else:
                     status = "Due"
-            else:
-                status = "Due"
 
-            items.append(f"{inst.label} ({status})")
+                items.append(f"{inst.label} ({status})")
 
-        if not items:
-            return "No installments defined"
+            return format_html("<br>".join(items)) if items else "No installments defined"
 
-        # 🔥 use <br> for line breaks, format_html to mark safe
-        return format_html("<br>".join(items))
+        return self._cache(obj, 'installments', compute)
 
-    installments_status.short_description = "Installment Status"
+    @admin.display(description="Accommodation")
+    def accommodation_summary(self, obj):
+        def compute():
+            allocations = getattr(obj, '_pref_accommodations', [])
+            if not allocations:
+                return "No accommodation assigned"
 
+            html = ["<table style='width:100%; border-collapse:collapse; font-family:system-ui;'>"]
+            html.append("""
+                <tr style='background:#f7f7f7; font-weight:600;'>
+                    <td style='padding:8px;'>Place</td>
+                    <td style='padding:8px;width:35%;'>Room/Bed</td>
+                </tr>
+            """)
 
-    # def installments_status(self, obj):
-    #     """
-    #     Show status of all installments for this registration:
-    #     - Paid → "Paid"
-    #     - Verification Pending → "Verification Pending"
-    #     - Due → "Due"
-    #     """
-    #     items = []
+            for idx, a in enumerate(allocations):
+                bg = "#ffffff" if idx % 2 == 0 else "#f9f9f9"
+                html.append(f"""
+                    <tr style="background:{bg}; border-bottom:1px solid #eee;">
+                        <td style="padding:8px; font-weight:600;">{a.accommodation.place_name}</td>
+                        <td style="padding:8px;">
+                            Room: <strong>{a.room_number or '—'}</strong><br>
+                            Bed: <strong>{a.bed_number or '—'}</strong>
+                        </td>
+                    </tr>
+                """)
 
-    #     # Get all installments defined in Yatra
-    #     all_yatra_installments = obj.yatra.installments.all().order_by('order')
+            html.append("</table>")
+            return format_html("".join(html))
 
-    #     for inst in all_yatra_installments:
-    #         # Try to get registration installment
-    #         reg_inst = obj.installments.filter(installment=inst).first()
+        return self._cache(obj, 'accommodation', compute)
 
-    #         if reg_inst:
-    #             if reg_inst.is_paid:
-    #                 status = "Paid"
-    #             elif reg_inst.payment and not reg_inst.is_paid:
-    #                 status = "Verification Pending"
-    #             else:
-    #                 status = "Due"
-    #         else:
-    #             status = "Due"  # Installment not yet created
+    @admin.display(description="Journey")
+    def journey_summary(self, obj):
+        def compute():
+            journeys = getattr(obj, '_pref_journeys', [])
+            if not journeys:
+                return "No journey assigned"
 
-    #         items.append(f"{inst.label} ({status})")
+            html = ["<table style='width:100%; border-collapse:collapse; font-family:system-ui;'>"]
+            html.append("""
+                <tr style='background:#f7f7f7; font-weight:600;'>
+                    <td style='padding:8px;width:25%;'>Type</td>
+                    <td style='padding:8px;width:45%;'>Route</td>
+                    <td style='padding:8px;'>Vehicle/Seat</td>
+                </tr>
+            """)
 
-    #     return " \n ".join(items) if items else "No installments defined"
+            for idx, j in enumerate(journeys):
+                bg = "#ffffff" if idx % 2 == 0 else "#f9f9f9"
+                html.append(f"""
+                    <tr style="background:{bg}; border-bottom:1px solid #eee;">
+                        <td style="padding:8px; font-weight:600;">{j.journey.type.upper()}</td>
+                        <td style="padding:8px;">{j.journey.from_location} → {j.journey.to_location}</td>
+                        <td style="padding:8px;">
+                            Vehicle: <strong>{j.vehicle_number or '—'}</strong><br>
+                            Seat: <strong>{j.seat_number or '—'}</strong>
+                        </td>
+                    </tr>
+                """)
 
-    # installments_status.short_description = "Installment Status"
+            html.append("</table>")
+            return format_html("".join(html))
+
+        return self._cache(obj, 'journey', compute)
+
 #──────────────────────────────────────────────────────────────
     def mentor_full_name(self, obj):
         """Return mentor full name of the person who is registered_for."""
@@ -435,28 +371,51 @@ class YatraRegistrationAdmin(admin.ModelAdmin):
     def has_module_permission(self, request):
         return True  # Still show in admin menu
 
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
 
-# @admin.register(YatraRegistrationInstallment)
-# class YatraRegistrationInstallmentAdmin(admin.ModelAdmin):
+        return qs.select_related(
+            'yatra',
+            'registered_for',
+            'registered_for__mentor',
+            'registered_by',
+        ).prefetch_related(
+            
+            Prefetch(
+                'installments',
+                queryset=YatraRegistrationInstallment.objects.select_related('installment'),
+                to_attr='_pref_installments',
+            ),
+            Prefetch(
+                'yatra__installments',
+                to_attr='_pref_yatra_installments',
+            ),
+               Prefetch(
+            'accommodation_allocations',
+            queryset=RegistrationAccommodation.objects.select_related('accommodation'),
+            to_attr='_pref_accommodations',
+            ),
+            Prefetch(
+                'journey_allocations',
+                queryset=RegistrationJourney.objects.select_related('journey'),
+                to_attr='_pref_journeys',
+            ),
+            Prefetch(
+                'custom_values',
+                queryset=RegistrationCustomFieldValue.objects.select_related(
+                    'custom_field_value__custom_field'
+                ),
+                to_attr='_pref_custom_values',
+            ),
+        )
     
-#     list_display = (
-#         'registration', 
-#         'installment', 
-#         'payment',
-#         'is_paid', 
-#         'paid_at', 
-#         'verified_by',
-#         'verified_at'
-#     )
-#     list_filter = ('is_paid', 'paid_at', 'verified_at')
-#     search_fields = (
-#         'registration__registered_for__first_name',
-#         'registration__registered_for__last_name',
-#         'payment__transaction_id'
-#     )
-#     readonly_fields = ('paid_at',)
+    def _cache(self, obj, key, compute_fn):
+        if not hasattr(obj, '_admin_cache'):
+            obj._admin_cache = {}
+        if key not in obj._admin_cache:
+            obj._admin_cache[key] = compute_fn()
+        return obj._admin_cache[key]
 
-#     def uploaded_at(self, obj):
-#         return obj.payment.uploaded_at if obj.payment else None
-#     uploaded_at.short_description = "Uploaded At"
+
+
 
