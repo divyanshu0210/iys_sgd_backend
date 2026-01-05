@@ -123,6 +123,14 @@ class MentorRequest(models.Model):
     approved_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        indexes = [
+            models.Index(
+                fields=['from_user', 'to_mentor', '-created_at'],
+                name='mentorreq_from_to_created_idx',
+            )
+        ]
+
     def __str__(self):
         return f"{self.from_user} → {self.to_mentor}"
     

@@ -4,13 +4,16 @@ from .models import *
 from django.contrib import admin
 from django.utils.timezone import localtime
 from django.utils.html import format_html
+from django.db.models import Prefetch, Max
+from django.db.models import OuterRef, Subquery, BooleanField, DateTimeField
+
 
 @admin.register(Profile)
 class ProfileAdmin(admin.ModelAdmin):
     list_display = (
         'formatted_member_id',
         'profile_photo_preview',
-        'user',
+        'user_username',
         'user_type',
         'first_name',
         'last_name',
@@ -77,7 +80,11 @@ class ProfileAdmin(admin.ModelAdmin):
         return f"{obj.member_id:06d}"
     formatted_member_id.short_description = "Member ID"
 
-    
+    def user_username(self, obj):
+        return obj.user.username if obj.user else "—"
+    user_username.short_description = "User"
+    user_username.admin_order_field = 'user__username'
+
     # ---------------------------
     # Mentor-related columns
     # ---------------------------
@@ -87,28 +94,14 @@ class ProfileAdmin(admin.ModelAdmin):
     mentor_display.short_description = "Mentor ID"
 
     def mentor_request_approved(self, obj):
-        req = MentorRequest.objects.filter(
-            from_user=obj,
-            to_mentor=obj.mentor
-        ).order_by('-created_at').first()
-
-        if not req:
+        if obj.last_request_is_approved is None:
             return "—"
-
-        return "✅ Yes" if req.is_approved else "❌ No"
-    mentor_request_approved.short_description = "Mentor Approved"
+        return "✅ Yes" if obj.last_request_is_approved else "❌ No"
 
     def mentor_request_approved_at(self, obj):
-        req = MentorRequest.objects.filter(
-            from_user=obj,
-            to_mentor=obj.mentor,
-            is_approved=True
-        ).order_by('-approved_at').first()
-
-        if req and req.approved_at:
-            return localtime(req.approved_at).strftime("%d %b %Y, %H:%M")
+        if obj.last_request_approved_at:
+            return localtime(obj.last_request_approved_at).strftime("%d %b %Y, %H:%M")
         return "—"
-    mentor_request_approved_at.short_description = "Approved At"
 
      # ---------------------------
     # Profile photo preview
@@ -117,13 +110,11 @@ class ProfileAdmin(admin.ModelAdmin):
     def profile_photo_preview(self, obj):
         if obj.profile_picture:
             return format_html(
-                '<img src="{}" width="40" height="40" style="border-radius:50%; object-fit:cover;" />',
+                '<img loading="lazy" src="{}" width="40" height="40" style="border-radius:50%; object-fit:cover;" />',
                 obj.profile_picture.url
             )
         return "—"
     profile_photo_preview.short_description = "Photo"
-
-
 
     
     def has_add_permission(self, request):
@@ -132,6 +123,32 @@ class ProfileAdmin(admin.ModelAdmin):
     # Optional: also hide from change/view pages of related models
     def has_module_permission(self, request):
         return True  # Still show in admin menu
+    
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+
+        qs = qs.select_related('mentor','user')
+
+        last_request_qs = MentorRequest.objects.filter(
+            from_user=OuterRef('pk'),
+            to_mentor=OuterRef('mentor_id'),
+        ).order_by('-created_at')
+
+        qs = qs.annotate(
+            last_request_is_approved=Subquery(
+                last_request_qs.values('is_approved')[:1],
+                output_field=BooleanField(),
+            ),
+            last_request_approved_at=Subquery(
+                last_request_qs.values('approved_at')[:1],
+                output_field=DateTimeField(),
+            ),
+        )
+
+        return qs
+
+    
+    
 
 
 class MentorOnlyFilter(admin.SimpleListFilter):
