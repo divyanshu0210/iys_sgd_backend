@@ -213,36 +213,47 @@ document.addEventListener('click', e => {
 
 function addAccommodation(select, regId) {
   if (!select.value) return;
+
   const container = document.getElementById('acc_container_' + regId);
   const name = select.options[select.selectedIndex].text;
   const uid = select.value + "_" + Date.now();
-  container.innerHTML += `
-    <div class="entry-box" style="margin:5px 0; padding:8px; background:#f0f8ff; border-left:4px solid #007cba; border-radius:4px;">
-      <strong>${name}</strong>
-      <button type="button" class="remove-btn" style="float:right; background:#d63638; color:white; border:none; border-radius:50%; width:20px; height:20px; font-size:12px; cursor:pointer;">×</button>
-      <br>
-      Room: <input name="new_acc_room_${regId}_${uid}" size="8" class="track-change" placeholder="">
-      Bed:  <input name="new_acc_bed_${regId}_${uid}" size="6" class="track-change">
-      <input type="hidden" name="new_acc_id_${regId}_${uid}" value="${select.value}">
-    </div>`;
+
+  // Create a new div
+  const div = document.createElement('div');
+  div.className = 'entry-box';
+  div.style = 'margin:5px 0; padding:8px; background:#f0f8ff; border-left:4px solid #007cba; border-radius:4px;';
+  div.innerHTML = `
+    <strong>${name}</strong>
+    <button type="button" class="remove-btn" style="float:right; background:#d63638; color:white; border:none; border-radius:50%; width:20px; height:20px; font-size:12px; cursor:pointer;">×</button>
+    <br>
+    Room: <input name="new_acc_room_${regId}_${uid}" size="8" class="track-change" placeholder="">
+    Bed:  <input name="new_acc_bed_${regId}_${uid}" size="6" class="track-change">
+    <input type="hidden" name="new_acc_id_${regId}_${uid}" value="${select.value}">
+  `;
+  container.appendChild(div); // ✅ append instead of rewriting innerHTML
   select.value = '';
   markChanged(select.closest('.data-row'));
 }
 
 function addJourney(select, regId) {
   if (!select.value) return;
+
   const container = document.getElementById('journey_container_' + regId);
   const name = select.options[select.selectedIndex].text;
   const uid = select.value + "_" + Date.now();
-  container.innerHTML += `
-    <div class="entry-box" style="margin:5px 0; padding:8px; background:#e8f5e8; border-left:4px solid #28a745; border-radius:4px;">
-      <strong>${name}</strong>
-      <button type="button" class="remove-btn" style="float:right; background:#d63638; color:white; border:none; border-radius:50%; width:20px; height:20px; font-size:12px; cursor:pointer;">×</button>
-      <br>
-      Vehicle/PNR: <input name="new_veh_${regId}_${uid}" size="14" class="track-change" placeholder="">
-      Seat:    <input name="new_seat_${regId}_${uid}" size="6" class="track-change" placeholder="">
-      <input type="hidden" name="new_journey_id_${regId}_${uid}" value="${select.value}">
-    </div>`;
+
+  const div = document.createElement('div');
+  div.className = 'entry-box';
+  div.style = 'margin:5px 0; padding:8px; background:#e8f5e8; border-left:4px solid #28a745; border-radius:4px;';
+  div.innerHTML = `
+    <strong>${name}</strong>
+    <button type="button" class="remove-btn" style="float:right; background:#d63638; color:white; border:none; border-radius:50%; width:20px; height:20px; font-size:12px; cursor:pointer;">×</button>
+    <br>
+    Vehicle/PNR: <input name="new_veh_${regId}_${uid}" size="14" class="track-change" placeholder="">
+    Seat:    <input name="new_seat_${regId}_${uid}" size="6" class="track-change" placeholder="">
+    <input type="hidden" name="new_journey_id_${regId}_${uid}" value="${select.value}">
+  `;
+  container.appendChild(div); // ✅ append instead of rewriting innerHTML
   select.value = '';
   markChanged(select.closest('.data-row'));
 }
@@ -267,6 +278,8 @@ function updateSelection() {
   document.getElementById('bulkActionBar').style.display = count > 0 ? 'block' : 'none';
 }
 
+
+// APPLY BULK ACTIONS
 function applyBulkActions() {
   const selected = document.querySelectorAll('.row-select:checked');
   if (selected.length === 0) return;
@@ -280,44 +293,14 @@ function applyBulkActions() {
     const row = cb.closest('.data-row');
     const regId = row.dataset.regId;
 
-    if (accId) {
-      const name = document.querySelector(`#bulkAccommodation option[value="${accId}"]`).text;
-      const container = document.getElementById('acc_container_' + regId);
-      const uid = accId + "_" + Date.now() + "_" + i;
-      container.innerHTML += `
-        <div class="entry-box" style="margin:5px 0; padding:8px; background:#f0f8ff; border-left:4px solid #007cba; border-radius:4px;">
-          <strong>${name}</strong>
-          <button type="button" class="remove-btn" style="float:right; background:#d63638; color:white; border:none; border-radius:50%; width:20px; height:20px; font-size:12px; cursor:pointer;">×</button>
-          <br>
-          Room: <input name="new_acc_room_${regId}_${uid}" value="${room}" size="8" class="track-change" placeholder="">
-          Bed:  <input name="new_acc_bed_${regId}_${uid}" size="6" class="track-change">
-          <input type="hidden" name="new_acc_id_${regId}_${uid}" value="${accId}">
-        </div>`;
-      markChanged(row);
-    }
-
-    if (journeyId) {
-      const name = document.querySelector(`#bulkJourney option[value="${journeyId}"]`).text;
-      const container = document.getElementById('journey_container_' + regId);
-      const uid = journeyId + "_" + Date.now() + "_" + i;
-      container.innerHTML += `
-        <div class="entry-box" style="margin:5px 0; padding:8px; background:#e8f5e8; border-left:4px solid #28a745; border-radius:4px;">
-          <strong>${name}</strong>
-          <button type="button" class="remove-btn" style="float:right; background:#d63638; color:white; border:none; border-radius:50%; width:20px; height:20px; font-size:12px; cursor:pointer;">×</button>
-          <br>
-          Vehicle/PNR: <input name="new_veh_${regId}_${uid}" value="${vehicle}" size="14" class="track-change" placeholder="">
-          Seat:    <input name="new_seat_${regId}_${uid}" size="6" class="track-change" placeholder="">
-          <input type="hidden" name="new_journey_id_${regId}_${uid}" value="${journeyId}">
-        </div>`;
-      markChanged(row);
-    }
+    if (accId) addAccommodationBulk(regId, accId, room, i);
+    if (journeyId) addJourneyBulk(regId, journeyId, vehicle, i);
 
     // Bulk assign custom fields
     document.querySelectorAll('.bulk-custom-field').forEach(sel => {
       if (sel.value) {
         const fieldId = sel.dataset.fieldId;
         const valueId = sel.value;
-        const valueText = sel.options[sel.selectedIndex].text;
         const currentSelect = document.querySelector(`select[name="cf_${fieldId}_${regId}"]`);
         if (currentSelect) {
           currentSelect.value = valueId;
@@ -327,7 +310,7 @@ function applyBulkActions() {
     });
   });
 
-  // Reset all
+  // Reset bulk selectors
   document.getElementById('bulkAccommodation').value = '';
   document.getElementById('bulkJourney').value = '';
   document.getElementById('bulkVehicle').value = '';
@@ -335,6 +318,53 @@ function applyBulkActions() {
   document.querySelectorAll('.bulk-custom-field').forEach(s => s.value = '');
   document.getElementById('bulkRoomWrapper').style.display = 'none';
   document.getElementById('bulkVehicleWrapper').style.display = 'none';
+}
+
+// HELPER FUNCTIONS FOR BULK ADD
+function addAccommodationBulk(regId, accId, room, idx) {
+  const container = document.getElementById('acc_container_' + regId);
+  const name = document.querySelector(`#bulkAccommodation option[value="${accId}"]`).text;
+  const uid = accId + "_" + Date.now() + "_" + idx;
+
+  const div = document.createElement('div');
+  div.className = 'entry-box';
+  div.style = 'margin:5px 0; padding:8px; background:#f0f8ff; border-left:4px solid #007cba; border-radius:4px;';
+  div.innerHTML = `
+    <strong>${name}</strong>
+    <button type="button" class="remove-btn" style="float:right; background:#d63638; color:white; border:none; border-radius:50%; width:20px; height:20px; font-size:12px; cursor:pointer;">×</button>
+    <br>
+    Room: <input name="new_acc_room_${regId}_${uid}" value="${room}" size="8" class="track-change" placeholder="">
+    Bed:  <input name="new_acc_bed_${regId}_${uid}" size="6" class="track-change">
+    <input type="hidden" name="new_acc_id_${regId}_${uid}" value="${accId}">
+  `;
+  container.appendChild(div);
+  div.querySelectorAll('.track-change').forEach(el => {
+    el.addEventListener('change', () => markChanged(el.closest('.data-row')));
+  });
+  markChanged(container.closest('.data-row'));
+}
+
+function addJourneyBulk(regId, journeyId, vehicle, idx) {
+  const container = document.getElementById('journey_container_' + regId);
+  const name = document.querySelector(`#bulkJourney option[value="${journeyId}"]`).text;
+  const uid = journeyId + "_" + Date.now() + "_" + idx;
+
+  const div = document.createElement('div');
+  div.className = 'entry-box';
+  div.style = 'margin:5px 0; padding:8px; background:#e8f5e8; border-left:4px solid #28a745; border-radius:4px;';
+  div.innerHTML = `
+    <strong>${name}</strong>
+    <button type="button" class="remove-btn" style="float:right; background:#d63638; color:white; border:none; border-radius:50%; width:20px; height:20px; font-size:12px; cursor:pointer;">×</button>
+    <br>
+    Vehicle/PNR: <input name="new_veh_${regId}_${uid}" value="${vehicle}" size="14" class="track-change" placeholder="">
+    Seat:    <input name="new_seat_${regId}_${uid}" size="6" class="track-change" placeholder="">
+    <input type="hidden" name="new_journey_id_${regId}_${uid}" value="${journeyId}">
+  `;
+  container.appendChild(div);
+  div.querySelectorAll('.track-change').forEach(el => {
+    el.addEventListener('change', () => markChanged(el.closest('.data-row')));
+  });
+  markChanged(container.closest('.data-row'));
 }
 
 // Reset after save
