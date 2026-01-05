@@ -33,12 +33,22 @@ def bulk_edit_view(request, yatra_id):
         with transaction.atomic():
             updated = 0
 
-            for reg in registrations:
+            selected_ids = request.POST.getlist("selected_regs")
+
+            # Safety check
+            if not selected_ids:
+                messages.warning(request, "No devotees selected.")
+                return redirect(request.path)
+
+            target_regs = registrations.filter(id__in=selected_ids)
+
+            for reg in target_regs:
+            # for reg in registrations:
                 changed = False  # Reset per registration
 
                 # ==================== 1. ACCOMMODATIONS ====================
                 # Delete removed
-                keep_acc_uuids = [k.split('_')[-1] for k in request.POST if k.startswith('keep_acc_')]
+                keep_acc_uuids = [k.split('_')[-1] for k in request.POST if k.startswith(f'keep_acc_{reg.id}_')]
                 deleted_acc = reg.accommodation_allocations.exclude(id__in=keep_acc_uuids).delete()[0]
                 if deleted_acc:
                     changed = True
@@ -66,6 +76,10 @@ def bulk_edit_view(request, yatra_id):
                 # Add new
                 for key, acc_uuid in request.POST.items():
                     if key.startswith('new_acc_id_'):
+                        parts = key.split('_')
+                        reg_in_key = parts[3] if len(parts) >= 4 else None
+                        if str(reg.id) != reg_in_key:
+                            continue  # skip allocations not for this registration
                         suffix = key[len('new_acc_id_'):]
                         room = request.POST.get(f'new_acc_room_{suffix}', '').strip() or None
                         bed = request.POST.get(f'new_acc_bed_{suffix}', '').strip() or None
@@ -82,7 +96,7 @@ def bulk_edit_view(request, yatra_id):
                             pass
 
                 # ==================== 2. JOURNEYS ====================
-                keep_journey_uuids = [k.split('_')[-1] for k in request.POST if k.startswith('keep_journey_')]
+                keep_journey_uuids = [k.split('_')[-1] for k in request.POST if k.startswith(f'keep_journey_{reg.id}_')]
                 deleted_journey = reg.journey_allocations.exclude(id__in=keep_journey_uuids).delete()[0]
                 if deleted_journey:
                     changed = True
@@ -110,6 +124,10 @@ def bulk_edit_view(request, yatra_id):
                 # Add new journeys
                 for key, journey_uuid in request.POST.items():
                     if key.startswith('new_journey_id_'):
+                        parts = key.split('_')
+                        reg_in_key = parts[3] if len(parts) >= 4 else None
+                        if str(reg.id) != reg_in_key:
+                            continue # skip allocations not for this registration
                         suffix = key[len('new_journey_id_'):]
                         vehicle = request.POST.get(f'new_veh_{suffix}', '').strip() or None
                         seat = request.POST.get(f'new_seat_{suffix}', '').strip() or None

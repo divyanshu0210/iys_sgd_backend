@@ -36,7 +36,7 @@
           {% endfor %}
         </select>
         <div id="bulkVehicleWrapper" style="margin-top:8px; display:none;">
-          <input type="text" id="bulkVehicle" placeholder="Vehicle Number (optional)" style="padding:6px; width:180px;">
+          <input type="text" id="bulkVehicle" placeholder="Vehicle/PNR Number (optional)" style="padding:6px; width:180px;">
         </div>
       </div>
 
@@ -71,7 +71,7 @@
             <th>#</th>
             <th>Devotee</th>
             <th style="width:380px;">Accommodations</th>
-            <th style="width:420px;">Journeys + Vehicle</th>
+            <th style="width:420px;">Journeys + Vehicle/PNR</th>
             {% for cf in custom_fields %}
               <th>{{ cf.field_name }}</th>
             {% endfor %}
@@ -80,7 +80,14 @@
         <tbody>
           {% for reg in registrations %}
           <tr class="data-row" data-reg-id="{{ reg.id }}">
-            <td><input type="checkbox" class="row-select" onchange="updateSelection()"></td>
+            <td>
+              <!-- <input type="checkbox" class="row-select" onchange="updateSelection()"> -->
+              <input type="checkbox"
+       class="row-select"
+       name="selected_regs"
+       value="{{ reg.id }}"
+       onchange="updateSelection()">
+            </td>
             <td>{{ forloop.counter }}</td>
             <td>
               <strong>{{ reg.registered_for.first_name }} {{ reg.registered_for.last_name }}</strong><br>
@@ -97,7 +104,8 @@
                     <br>
                     Room: <input name="acc_room_{{ alloc.id }}" value="{{ alloc.room_number|default:'' }}" size="8" class="track-change" placeholder="">
                     Bed:  <input name="acc_bed_{{ alloc.id }}" value="{{ alloc.bed_number|default:'' }}" size="6" class="track-change">
-                    <input type="hidden" name="keep_acc_{{ alloc.id }}" value="1">
+                    <!-- <input type="hidden" name="keep_acc_{{ alloc.id }}" value="1"> -->
+                     <input type="hidden" name="keep_acc_{{ reg.id }}_{{ alloc.id }}" value="1">
                   </div>
                 {% endfor %}
               </div>
@@ -118,9 +126,10 @@
                     <strong>{{ alloc.journey.type|capfirst }}: {{ alloc.journey.from_location }} → {{ alloc.journey.to_location }}</strong>
                     <button type="button" class="remove-btn" style="float:right; background:#d63638; color:white; border:none; border-radius:50%; width:20px; height:20px; font-size:12px; cursor:pointer;">×</button>
                     <br>
-                    Vehicle: <input name="veh_{{ alloc.id }}" value="{{ alloc.vehicle_number|default:'' }}" size="14" class="track-change" placeholder="">
+                    Vehicle/PNR: <input name="veh_{{ alloc.id }}" value="{{ alloc.vehicle_number|default:'' }}" size="14" class="track-change" placeholder="">
                     Seat:    <input name="seat_{{ alloc.id }}" value="{{ alloc.seat_number|default:'' }}" size="6" class="track-change" placeholder="">
-                    <input type="hidden" name="keep_journey_{{ alloc.id }}" value="1">
+                    <!-- <input type="hidden" name="keep_journey_{{ alloc.id }}" value="1"> -->
+                    <input type="hidden" name="keep_journey_{{ reg.id }}_{{ alloc.id }}" value="1">
                   </div>
                 {% endfor %}
               </div>
@@ -230,7 +239,7 @@ function addJourney(select, regId) {
       <strong>${name}</strong>
       <button type="button" class="remove-btn" style="float:right; background:#d63638; color:white; border:none; border-radius:50%; width:20px; height:20px; font-size:12px; cursor:pointer;">×</button>
       <br>
-      Vehicle: <input name="new_veh_${regId}_${uid}" size="14" class="track-change" placeholder="">
+      Vehicle/PNR: <input name="new_veh_${regId}_${uid}" size="14" class="track-change" placeholder="">
       Seat:    <input name="new_seat_${regId}_${uid}" size="6" class="track-change" placeholder="">
       <input type="hidden" name="new_journey_id_${regId}_${uid}" value="${select.value}">
     </div>`;
@@ -296,7 +305,7 @@ function applyBulkActions() {
           <strong>${name}</strong>
           <button type="button" class="remove-btn" style="float:right; background:#d63638; color:white; border:none; border-radius:50%; width:20px; height:20px; font-size:12px; cursor:pointer;">×</button>
           <br>
-          Vehicle: <input name="new_veh_${regId}_${uid}" value="${vehicle}" size="14" class="track-change" placeholder="">
+          Vehicle/PNR: <input name="new_veh_${regId}_${uid}" value="${vehicle}" size="14" class="track-change" placeholder="">
           Seat:    <input name="new_seat_${regId}_${uid}" size="6" class="track-change" placeholder="">
           <input type="hidden" name="new_journey_id_${regId}_${uid}" value="${journeyId}">
         </div>`;
