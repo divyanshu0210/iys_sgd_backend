@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.admin import RelatedOnlyFieldListFilter
-
+from userProfile.admin_utils import export_as_excel
 from yatra_registration.bulk_import_admin_views import yatra_bulk_offline_import
 from .models import *
 from django.urls import path
@@ -154,6 +154,7 @@ class YatraRegistrationAdmin(admin.ModelAdmin):
         RegistrationJourneyInline,
         RegistrationCustomFieldValueInline
     ]
+    actions = [export_as_excel]
 
     @admin.display(description="Status", ordering='status')
     def registration_status(self, obj):

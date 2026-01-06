@@ -1,5 +1,5 @@
 from django.contrib import admin
-
+from userProfile.admin_utils import export_as_excel
 from .models import *
 from django.contrib import admin
 from django.utils.timezone import localtime
@@ -49,6 +49,8 @@ class ProfileAdmin(admin.ModelAdmin):
 
     readonly_fields = ('member_id', 'created_at')
     ordering = ('-created_at',)
+    actions = [export_as_excel]
+
 
     def save_model(self, request, obj, form, change):
         """
