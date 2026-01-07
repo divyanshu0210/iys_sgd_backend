@@ -79,6 +79,12 @@ class YatraRegistration(models.Model):
         return sum(
             inst.installment.amount for inst in self.installments.filter(is_paid=True)
         )
+    
+    def has_any_installment_under_verification(self):
+        return self.installments.filter(
+            payment__isnull=False,
+            is_paid=False
+        ).exists()
 
     @property
     def pending_amount(self):

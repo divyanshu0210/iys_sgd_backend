@@ -52,6 +52,13 @@ def create_substitution_request(request, reg_id):
 
     if not initiator_has_verified_installment(reg):
         return Response({"detail": "At least one installment must be fully verified to initiate substitution."}, status=400)
+    
+      # NEW: block if any installment is under verification
+    if reg.has_any_installment_under_verification():
+        return Response(
+            {"detail": "Substitution is not allowed because an installment verification is pending."},
+            status=400
+        )
 
     target_id = request.data.get("target_profile_id")
     if not target_id:
@@ -60,6 +67,13 @@ def create_substitution_request(request, reg_id):
         target = Profile.objects.get(member_id=target_id)
     except Profile.DoesNotExist:
         return Response({"detail":"Target profile not found"}, status=404)
+    
+     # NEW: prevent self-substitution
+    if target == user_profile:
+        return Response(
+            {"detail": "You cannot send a substitution request to yourself."},
+            status=400
+        )
 
     # generate 2-digit code
     code = f"{random.randint(0,99):02d}"

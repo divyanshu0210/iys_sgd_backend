@@ -582,6 +582,14 @@ class YatraRegistrationView(APIView):
                 status=400
             )
         
+        if registration.has_any_installment_under_verification():
+            return Response(
+                {
+                    "error": "Cancellation is not allowed because an installment verification is pending."
+                },
+                status=400
+    )
+        
         active_substitution = (
             SubstitutionRequest.objects
             .filter(
@@ -597,7 +605,7 @@ class YatraRegistrationView(APIView):
         if active_substitution:
             return Response(
                 {
-                    "error": "Cancellation not allowed while a substitution request is active.",
+                    "error": "Cancellation not allowed while a substitution request is active. Try after the request is expired.",
                     "substitution_request_id": str(active_substitution.id)
                 },
                 status=400
