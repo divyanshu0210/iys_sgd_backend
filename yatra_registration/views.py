@@ -418,6 +418,29 @@ class YatraRegistrationView(APIView):
                         "value": v.custom_field_value.value
                     })
 
+                # ========================
+                # SUBSTITUTION INFO
+                # ========================
+                substitution_request = SubstitutionRequest.objects.filter(
+                        new_registration=registration,
+                        target_profile=profile_obj,
+                        status="accepted",   # or "accepted" – use your actual success state
+                        fee_collected=False
+                    ).order_by("-created_at").first()
+
+                is_substitution = bool(substitution_request)
+
+                pending_substitution_fees = None
+                if is_substitution:
+                    cancellation_fee = registration.yatra.cancellation_fee or 0
+                    substitution_fee = registration.yatra.substitution_fee or 0
+
+                    pending_substitution_fees = {
+                        "cancellation_fee": float(cancellation_fee),
+                        "substitution_fee": float(substitution_fee),
+                        "total": float(cancellation_fee + substitution_fee),
+                    }
+
                 profile_data.update({
                     'is_registered': True,
                     'registration_id': str(registration.id),
@@ -432,7 +455,10 @@ class YatraRegistrationView(APIView):
                     'accommodation': accommodation_data,
                     'journey': journey_data,
                     'custom_fields': custom_fields,
+                    'is_substitution': is_substitution,
+                    'pending_substitution_fees': pending_substitution_fees,
                 })
+
             else:
                 installments_info = [
                 {'label': inst.label, 'amount': float(inst.amount), 'tag': 'due'}
@@ -451,6 +477,9 @@ class YatraRegistrationView(APIView):
                     'accommodation': [],
                     'journey': [],
                     'custom_fields': [],
+                    'is_substitution': False,
+                    'pending_fees': None,
+
                 })
 
         return Response({
