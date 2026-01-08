@@ -17,10 +17,19 @@ class Yatra(models.Model):
     is_registration_open = models.BooleanField(default=True) 
     is_rcs_download_open = models.BooleanField(default=False) 
     is_substitution_open = models.BooleanField(default=False) 
+    is_cancellation_open = models.BooleanField(default=False)  # ✅ NEW
     close_yatra = models.BooleanField(default=False)
     payment_upi_id = models.CharField(max_length=255, blank=True, null=True,default="")  
     substitution_fee = models.DecimalField(max_digits=10, decimal_places=2, default=500)
     cancellation_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    payment_refund_date = models.DateField(          # ✅ NEW
+        blank=True, null=True,
+        help_text="Date after which refund for cancellations will be made."
+    )
+    accept_full_payment_only_date = models.DateField(       # ✅ NEW
+        blank=True, null=True,
+        help_text="After this date, partial installment payment is not allowed for new registrations."
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
