@@ -71,6 +71,7 @@ INSTALLED_APPS = [
     'payment',
     'storages',
     'yatra_substitution',
+    'announcements',
 ]
 SITE_ID = 1
 
