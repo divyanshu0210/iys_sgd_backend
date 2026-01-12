@@ -105,6 +105,19 @@ def custom_field_name(self, instance):
         return f"{instance.custom_field_value.custom_field.field_name}: {instance.custom_field_value.value}"
     return "-"
 
+@admin.register(YatraEligibility)
+class YatraEligibilityAdmin(admin.ModelAdmin):
+    list_display = ('yatra', 'profile', 'approved_by', 'is_approved', 'approved_at')
+    list_filter = ('is_approved', 'yatra','yatra__title', 'approved_at')
+    search_fields = ('profile__first_name', 'profile__last_name', 'yatra__title')
+    ordering = ('-approved_at',)
+
+    def has_add_permission(self, request):
+        return False
+
+    # Optional: also hide from change/view pages of related models
+    def has_module_permission(self, request):
+        return True  # Still show in admin menu
 
 
 class RegistrationAccommodationInline(admin.TabularInline):
