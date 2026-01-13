@@ -151,7 +151,7 @@ class MentorRequestView(APIView):
         ).select_related('from_user__user')
 
         approved_mentees_data = [
-            ProfileSerializer(req.from_user, context={'request': request}).data
+            ProfileFastSerializer(req.from_user, context={'request': request}).data
             for req in approved_requests
         ]
 
@@ -166,7 +166,7 @@ class MentorRequestView(APIView):
         pending_requests_data = [
             {
                 "id": req.id,
-                "from_user": ProfileSerializer(req.from_user, context={'request': request}).data,
+                "from_user": ProfileFastSerializer(req.from_user, context={'request': request}).data,
                 "message": req.message,
                 "created_at": req.created_at,
             }
@@ -185,7 +185,7 @@ class MentorRequestView(APIView):
         # 4. RESPONSE
         # =================================================================
         return Response({
-            "mentor_profile": ProfileSerializer(mentor_profile, context={'request': request}).data,
+            "mentor_profile": ProfileFastSerializer(mentor_profile, context={'request': request}).data,
             "approved_mentees": approved_mentees_data,
             "pending_requests": pending_requests_data,
             "stats": stats,
