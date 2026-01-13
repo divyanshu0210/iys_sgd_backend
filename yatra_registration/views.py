@@ -10,12 +10,18 @@ from django.shortcuts import get_object_or_404
 from yatra.serializers import *
 from yatra_substitution.models import SubstitutionRequest
 from .models import *
-from userProfile.serializers import ProfileSerializer
+from userProfile.serializers import *
 from .serializers import *
 from userProfile.models import *
 import uuid
 from payment.models import *
 from .models import YatraRegistration
+from django.db.models import (
+    F, Value, CharField, OuterRef, Exists
+)
+from django.db.models.functions import Concat
+from uuid import UUID
+
 
 
 
@@ -35,60 +41,143 @@ class YatraEligibilityView(APIView):
     """
     permission_classes = [IsAuthenticated]
 
+    # def get(self, request, yatra_id):
+    #     yatra = get_object_or_404(Yatra, id=yatra_id)
+    #     mentor = request.user.profile
+
+    #     # === 1. Get approved mentees from MentorRequest ===
+    #     approved_requests = MentorRequest.objects.filter(
+    #         to_mentor=mentor,
+    #         is_approved=True
+    #     ).select_related('from_user')
+    #     mentees = [req.from_user for req in approved_requests]
+
+    #     # === 2. Include self (mentor) in the list ===
+    #     all_profiles = mentees + [mentor]  # self is always included
+
+    #     # === 3. Build eligibility map ===
+    #     profile_ids = [p.id for p in all_profiles]
+    #     eligibilities = YatraEligibility.objects.filter(
+    #         yatra=yatra,
+    #         profile__id__in=profile_ids
+    #     ).select_related('profile', 'approved_by')
+    #     eligibility_map = {el.profile_id: el for el in eligibilities}
+
+    #     serializer = ProfileFastSerializer(
+    #     all_profiles,
+    #     many=True,
+    #     context={'request': request}
+    #     )
+    #     profiles_data = serializer.data
+
+    #     # === 4. Build response data ===
+    #     data = []
+    #     for profile in all_profiles:
+    #         profile_id = str(profile.id)
+    #         el = eligibility_map.get(profile.id)
+
+    #     # Append extra fields using index (safest)
+    #     for idx, profile in enumerate(all_profiles):
+    #         el = eligibility_map.get(profile.id)
+    #         profiles_data[idx].update({
+    #             'is_approved': el.is_approved if el else False,
+    #             'approved_by': str(el.approved_by.member_id) if el and el.approved_by else None,
+    #             'approved_at': el.approved_at.isoformat() if el and el.approved_at else None,
+    #             'is_self': profile == mentor,
+    #         })
+
+    #     return Response({
+    #     'yatra': {
+    #         'id': str(yatra.id),
+    #         'title': yatra.title,
+    #     },
+    #     'profiles': profiles_data,
+    #     'total_mentees': len(mentees),
+    #     'includes_self': True,
+    # }, status=200)
+
     def get(self, request, yatra_id):
         yatra = get_object_or_404(Yatra, id=yatra_id)
         mentor = request.user.profile
 
-        # === 1. Get approved mentees from MentorRequest ===
-        approved_requests = MentorRequest.objects.filter(
-            to_mentor=mentor,
-            is_approved=True
-        ).select_related('from_user')
-        mentees = [req.from_user for req in approved_requests]
+        # =====================================================
+        # 1. GET APPROVED MENTEE IDS (FAST)
+        # =====================================================
+        mentee_ids = list(
+            MentorRequest.objects.filter(
+                to_mentor=mentor,
+                is_approved=True
+            ).values_list('from_user_id', flat=True)
+        )
 
-        # === 2. Include self (mentor) in the list ===
-        all_profiles = mentees + [mentor]  # self is always included
+        # Always include self
+        profile_ids = mentee_ids + [mentor.id]
 
-        # === 3. Build eligibility map ===
-        profile_ids = [p.id for p in all_profiles]
-        eligibilities = YatraEligibility.objects.filter(
-            yatra=yatra,
-            profile__id__in=profile_ids
-        ).select_related('profile', 'approved_by')
-        eligibility_map = {el.profile_id: el for el in eligibilities}
+        # =====================================================
+        # 2. FETCH ALL PROFILES IN ONE QUERY
+        # =====================================================
+        profiles_qs = (
+            Profile.objects
+            .filter(id__in=profile_ids)
+            .select_related('user', 'mentor')
+        )
 
-        serializer = ProfileSerializer(
-        all_profiles,
-        many=True,
-        context={'request': request}
+        # Preserve original order (mentees first, self last)
+        profile_order = {pid: idx for idx, pid in enumerate(profile_ids)}
+        profiles = sorted(profiles_qs, key=lambda p: profile_order[p.id])
+
+        # =====================================================
+        # 3. FETCH ELIGIBILITY (MINIMAL)
+        # =====================================================
+        eligibilities = (
+            YatraEligibility.objects
+            .filter(yatra=yatra, profile_id__in=profile_ids)
+            .select_related('approved_by')
+            .only('profile_id', 'is_approved', 'approved_by', 'approved_at')
+        )
+        eligibility_map = {e.profile_id: e for e in eligibilities}
+
+        # =====================================================
+        # 4. SERIALIZE (FAST SERIALIZER)
+        # =====================================================
+        serializer = ProfileFastSerializer(
+            profiles,
+            many=True,
+            context={'request': request}
         )
         profiles_data = serializer.data
 
-        # === 4. Build response data ===
-        data = []
-        for profile in all_profiles:
-            profile_id = str(profile.id)
+        # =====================================================
+        # 5. MERGE ELIGIBILITY DATA (O(N), NO DB)
+        # =====================================================
+        for idx, profile in enumerate(profiles):
             el = eligibility_map.get(profile.id)
 
-        # Append extra fields using index (safest)
-        for idx, profile in enumerate(all_profiles):
-            el = eligibility_map.get(profile.id)
             profiles_data[idx].update({
                 'is_approved': el.is_approved if el else False,
-                'approved_by': str(el.approved_by.member_id) if el and el.approved_by else None,
-                'approved_at': el.approved_at.isoformat() if el and el.approved_at else None,
-                'is_self': profile == mentor,
+                'approved_by': (
+                    str(el.approved_by.member_id)
+                    if el and el.approved_by else None
+                ),
+                'approved_at': (
+                    el.approved_at.isoformat()
+                    if el and el.approved_at else None
+                ),
+                'is_self': profile.id == mentor.id,
             })
 
+        # =====================================================
+        # 6. RESPONSE
+        # =====================================================
         return Response({
-        'yatra': {
-            'id': str(yatra.id),
-            'title': yatra.title,
-        },
-        'profiles': profiles_data,
-        'total_mentees': len(mentees),
-        'includes_self': True,
-    }, status=200)
+            'yatra': {
+                'id': str(yatra.id),
+                'title': yatra.title,
+            },
+            'profiles': profiles_data,
+            'total_mentees': len(mentee_ids),
+            'includes_self': True,
+        }, status=200)
 
     def post(self, request, yatra_id):
         yatra = get_object_or_404(Yatra, id=yatra_id)
@@ -263,231 +352,270 @@ class YatraRegistrationView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, yatra_id):
-        """
-        Get registration + eligibility status for all eligible profiles
-        """
-        yatra = get_object_or_404(Yatra, id=yatra_id)
-        user_profile = request.user.profile
+            print("STEP 0: ENTER VIEW")
+            # return Response({"detail": "This endpoint is under maintenance."}, status=200)
 
-        # === GET APPROVED MENTEES ===
-        approved_mentee_requests = MentorRequest.objects.filter(
-            to_mentor=user_profile,
-            is_approved=True
-        ).select_related('from_user')
+            try:
+                yatra = get_object_or_404(Yatra, id=yatra_id)
+                user_profile = request.user.profile
+                print("STEP 1: yatra & user_profile OK", yatra.id, user_profile.id)
 
-        mentees = [req.from_user for req in approved_mentee_requests]
-        all_profiles = mentees.copy()
+                # =====================================================
+                # APPROVED MENTEES
+                # =====================================================
+                mentees = list(
+                    MentorRequest.objects
+                    .filter(to_mentor=user_profile, is_approved=True)
+                    .values_list('from_user_id', flat=True)
+                )
+                print("STEP 2: mentees fetched", mentees)
 
-        # === Add self if approved ===
-        try:
-            self_eligibility = YatraEligibility.objects.get(
-                yatra=yatra,
-                profile=user_profile
-            )
-            if self_eligibility.is_approved:
-                all_profiles = [user_profile] + all_profiles
-        except YatraEligibility.DoesNotExist:
-            pass
+                profile_ids = list(mentees)
 
-        # === Eligibility Map ===
-        profile_ids = [p.id for p in all_profiles]
-        eligibilities = YatraEligibility.objects.filter(
-            yatra=yatra,
-            profile__id__in=profile_ids
-        ).select_related('approved_by')
-        eligibility_map = {el.profile_id: el for el in eligibilities}
+                # =====================================================
+                # ADD SELF IF ELIGIBLE
+                # =====================================================
+                if YatraEligibility.objects.filter(
+                    yatra=yatra,
+                    profile=user_profile,
+                    is_approved=True
+                ).exists():
+                    profile_ids.insert(0, user_profile.id)
 
-        # === Existing Registrations ===
-        existing_registrations = YatraRegistration.objects.filter(
-            yatra=yatra,
-            registered_for__in=all_profiles
-        ).select_related('registered_for').prefetch_related('installments__installment',
-                                                            'accommodation_allocations__accommodation',
-            'journey_allocations__journey',
-            'custom_values__custom_field_value__custom_field')
+                print("STEP 3: profile_ids", profile_ids)
 
-        registration_map = {reg.registered_for_id: reg for reg in existing_registrations}
+                # =====================================================
+                # FAST PROFILE QUERY (ANNOTATED)
+                # =====================================================
+                approved_req = MentorRequest.objects.filter(
+                    from_user=OuterRef('pk'),
+                    is_approved=True
+                )
 
-        # === Yatra Installments ===
-        yatra_installments = yatra.installments.all()
+                profiles_qs = (
+                    Profile.objects
+                    .filter(id__in=profile_ids)
+                    .select_related('user', 'mentor')
+                    .annotate(
+                        full_name=Concat(
+                            F('first_name'),
+                            Value(' '),
+                            F('last_name'),
+                            output_field=CharField()
+                        ),
+                        mentor_name=Concat(
+                            F('mentor__first_name'),
+                            Value(' '),
+                            F('mentor__last_name'),
+                            output_field=CharField()
+                        ),
+                        is_profile_approved=Exists(approved_req),
+                    )
+                )
 
-        # === Serialize Profiles ===
-        serializer = ProfileSerializer(all_profiles, many=True, context={'request': request})
-        profiles_data = serializer.data
+                print("STEP 4: profiles_qs COUNT =", profiles_qs.count())
 
-        # === Merge Eligibility + Registration Info ===
-        for profile_data in profiles_data:
-            profile_id = uuid.UUID(profile_data['id'])
-            profile_obj = next((p for p in all_profiles if p.id == profile_id), None)
-            registration = registration_map.get(profile_id)
-            eligibility = eligibility_map.get(profile_id)
+                profiles_data = ProfileFastSerializer(profiles_qs, many=True).data
+                print("STEP 5: profiles serialized", len(profiles_data))
 
-            # Eligibility fields
-            profile_data.update({
-                'is_eligible': eligibility.is_approved if eligibility else False,
-                'is_self': profile_obj == user_profile,
-                'approved_by': (
-                    str(eligibility.approved_by.member_id)
-                    if eligibility and eligibility.approved_by else None
-                ),
-            })
+                # profile_map = {p['id']: p for p in profiles_data}
+                profile_map = {UUID(p['id']): p for p in profiles_data}
 
-            # Registration fields
-            if registration:
-                paid_installments = []
-                pending_installments = []
+                print("STEP 6: profile_map keys", profile_map.keys())
 
-                for inst in registration.installments.all():
-                    if inst.is_paid:
-                        paid_installments.append(inst.installment.label)
-                    else:
-                        pending_installments.append(inst.installment.label)
+                # =====================================================
+                # ELIGIBILITY MAP
+                # =====================================================
+                eligibilities = (
+                    YatraEligibility.objects
+                    .filter(yatra=yatra, profile_id__in=profile_ids)
+                    .select_related('approved_by')
+                )
+                eligibility_map = {e.profile_id: e for e in eligibilities}
 
-                # Include installments not yet created
-                existing_labels = [inst.installment.label for inst in registration.installments.all()]
-                for yatra_inst in yatra_installments:
-                    if yatra_inst.label not in existing_labels:
-                        pending_installments.append(yatra_inst.label)
+                print("STEP 7: eligibility_map keys", eligibility_map.keys())
 
-            
-            if registration:
-                installments_info = []
+                # =====================================================
+                # REGISTRATIONS (FULLY PREFETCHED)
+                # =====================================================
+                registrations = (
+                    YatraRegistration.objects
+                    .filter(yatra=yatra, registered_for_id__in=profile_ids)
+                    .select_related('registered_for')
+                    .prefetch_related(
+                        'installments__installment',
+                        'installments__payment',
+                        'installments__verified_by',
+                        'accommodation_allocations__accommodation',
+                        'journey_allocations__journey',
+                        'custom_values__custom_field_value__custom_field',
+                    )
+                )
 
-                for inst in yatra_installments:
-                    reg_inst = registration.installments.filter(installment=inst).first()
+                print("STEP 8: registrations COUNT =", registrations.count())
 
-                    if reg_inst:
-                        if reg_inst.is_paid:
-                            tag = "verified"
-                        elif reg_inst.payment and reg_inst.verified_by:
-                            tag = reg_inst.payment.status
-                        elif reg_inst.payment and not reg_inst.verified_by:
-                            tag = "verification pending"
-                        else:
-                            tag = "due"
-                    else:
-                        tag = "due"
+                registration_map = {r.registered_for_id: r for r in registrations}
+                yatra_installments = list(yatra.installments.all())
 
-                    installments_info.append({
-                        'label': inst.label,
-                        'amount': float(inst.amount),
-                        'tag': tag
-                    })  
+                print("STEP 9: yatra_installments", [i.label for i in yatra_installments])
 
-                        # ========================
-                # ACCOMMODATION SUMMARY
-                # ========================
-                accommodation_data = []
-                for alloc in registration.accommodation_allocations.all():
-                    # accommodation_data.append({
-                    #     "accommodation": alloc.accommodation,
-                    #     "room_number": alloc.room_number,
-                    #     "bed_number": alloc.bed_number
-                    # })
-                    accommodation_data.append({
-                        "accommodation": AccommodationSerializer(
-                            alloc.accommodation, 
-                            context={'request': request}
-                        ).data,
-                        "room_number": alloc.room_number,
-                        "bed_number": alloc.bed_number
-                    })
-
-
-                # ========================
-                # JOURNEY SUMMARY
-                # ========================
-                journey_data = []
-                for j in registration.journey_allocations.all():
-                    journey_data.append({
-                         "journey": JourneySerializer(
-                            j.journey, 
-                            context={'request': request}
-                        ).data,
-                        "vehicle_number": j.vehicle_number,
-                        "seat_number": j.seat_number,
-                    })
-
-                # ========================
-                # CUSTOM FIELD SUMMARY
-                # ========================
-                custom_fields = []
-                for v in registration.custom_values.all():
-                    custom_fields.append({
-                        "field": v.custom_field_value.custom_field.field_name,
-                        "value": v.custom_field_value.value
-                    })
-
-                # ========================
-                # SUBSTITUTION INFO
-                # ========================
-                substitution_request = SubstitutionRequest.objects.filter(
-                        new_registration=registration,
-                        target_profile=profile_obj,
-                        status="accepted",   # or "accepted" – use your actual success state
+                # =====================================================
+                # SUBSTITUTION REQUESTS (BULK)
+                # =====================================================
+                substitution_map = {
+                    s.new_registration_id: s
+                    for s in SubstitutionRequest.objects.filter(
+                        new_registration__in=registrations,
+                        status="accepted",
                         fee_collected=False
-                    ).order_by("-created_at").first()
+                    )
+                }
 
-                is_substitution = bool(substitution_request)
+                print("STEP 10: substitution_map keys", substitution_map.keys())
 
-                pending_substitution_fees = None
-                if is_substitution:
-                    cancellation_fee = registration.yatra.cancellation_fee or 0
-                    substitution_fee = registration.yatra.substitution_fee or 0
+                # =====================================================
+                # MERGE ALL DATA
+                # =====================================================
+                for pid in profile_ids:
+                    print("STEP 11: processing profile", pid)
 
-                    pending_substitution_fees = {
-                        "cancellation_fee": float(cancellation_fee),
-                        "substitution_fee": float(substitution_fee),
-                        "total": float(cancellation_fee + substitution_fee),
-                    }
+                    pdata = profile_map.get(pid)
+                    if not pdata:
+                        print("⚠️ WARNING: profile missing in profile_map", pid)
+                        continue
 
-                profile_data.update({
-                    'is_registered': True,
-                    'registration_id': str(registration.id),
-                    'registration_status': registration.status,
-                    'form_data': registration.form_data,
-                    'paid_amount': float(registration.paid_amount),
-                    'pending_amount': float(registration.pending_amount),
-                    'installments_paid': paid_installments,
-                    'installments_pending': pending_installments,
-                    'installments_info': installments_info,
+                    eligibility = eligibility_map.get(pid)
+                    registration = registration_map.get(pid)
 
-                    'accommodation': accommodation_data,
-                    'journey': journey_data,
-                    'custom_fields': custom_fields,
-                    'is_substitution': is_substitution,
-                    'pending_substitution_fees': pending_substitution_fees,
+                    pdata.update({
+                        'is_eligible': eligibility.is_approved if eligibility else False,
+                        'is_self': pid == user_profile.id,
+                        'approved_by': (
+                            str(eligibility.approved_by.member_id)
+                            if eligibility and eligibility.approved_by else None
+                        ),
+                    })
+
+                    if registration:
+                        print("STEP 12: has registration", registration.id)
+
+                        reg_installments = list(registration.installments.all())
+                        inst_map = {i.installment_id: i for i in reg_installments}
+
+                        paid, pending = [], []
+                        for inst in reg_installments:
+                            (paid if inst.is_paid else pending).append(inst.installment.label)
+
+                        for inst in yatra_installments:
+                            if inst.label not in paid and inst.label not in pending:
+                                pending.append(inst.label)
+
+                        installments_info = []
+                        for inst in yatra_installments:
+                            ri = inst_map.get(inst.id)
+                            if ri:
+                                if ri.is_paid:
+                                    tag = "verified"
+                                elif ri.payment and ri.verified_by:
+                                    tag = ri.payment.status
+                                elif ri.payment:
+                                    tag = "verification pending"
+                                else:
+                                    tag = "due"
+                            else:
+                                tag = "due"
+
+                            installments_info.append({
+                                "label": inst.label,
+                                "amount": float(inst.amount),
+                                "tag": tag,
+                            })
+
+                        pdata.update({
+                            'is_registered': True,
+                            'registration_id': str(registration.id),
+                            'registration_status': registration.status,
+                            'form_data': registration.form_data,
+                            # 'paid_amount': float(registration.paid_amount),
+                            # 'pending_amount': float(registration.pending_amount),
+                            'installments_paid': paid,
+                            'installments_pending': pending,
+                            'installments_info': installments_info,
+                            'accommodation': [
+                            {
+                                "accommodation": AccommodationSerializer(
+                                    a.accommodation, context={'request': request}
+                                ).data,
+                                "room_number": a.room_number,
+                                "bed_number": a.bed_number,
+                            }
+                            for a in registration.accommodation_allocations.all()
+                            ],
+                            'journey': [
+                                {
+                                    "journey": JourneySerializer(
+                                        j.journey, context={'request': request}
+                                    ).data,
+                                    "vehicle_number": j.vehicle_number,
+                                    "seat_number": j.seat_number,
+                                }
+                                for j in registration.journey_allocations.all()
+                            ],
+                            'custom_fields': [
+                                {
+                                    "field": v.custom_field_value.custom_field.field_name,
+                                    "value": v.custom_field_value.value,
+                                }
+                                for v in registration.custom_values.all()
+                            ],
+                        })
+
+                        sub_req = substitution_map.get(registration.id)
+                        pdata.update({
+                            'is_substitution': bool(sub_req),
+                            'pending_substitution_fees': (
+                                {
+                                    "cancellation_fee": float(yatra.cancellation_fee or 0),
+                                    "substitution_fee": float(yatra.substitution_fee or 0),
+                                    "total": float(
+                                        (yatra.cancellation_fee or 0) +
+                                        (yatra.substitution_fee or 0)
+                                    ),
+                                } if sub_req else None
+                            )
+                        })
+
+                    else:
+                        print("STEP 13: NOT registered", pid)
+                        pdata.update({
+                            'is_registered': False,
+                            'registration_status': "pending",
+                            'form_data': {},
+                            'paid_amount': 0,
+                            'pending_amount': float(sum(i.amount for i in yatra_installments)),
+                            'installments_paid': [],
+                            'installments_pending': [i.label for i in yatra_installments],
+                            'installments_info': [
+                                {'label': i.label, 'amount': float(i.amount), 'tag': 'due'}
+                                for i in yatra_installments
+                            ],
+                            'accommodation': [],
+                            'journey': [],
+                            'custom_fields': [],
+                            'is_substitution': False,
+                            'pending_substitution_fees': None,
+                        })
+
+                print("STEP 14: RESPONSE READY")
+
+                return Response({
+                    "yatra": YatraSerializer(yatra, context={'request': request}).data,
+                    "profiles": list(profile_map.values()),
                 })
 
-            else:
-                installments_info = [
-                {'label': inst.label, 'amount': float(inst.amount), 'tag': 'due'}
-                for inst in yatra_installments
-            ]
-                profile_data.update({
-                    'is_registered': False,
-                    'registration_status': "pending",
-                    'form_data': {},
-                    'paid_amount': 0,
-                    'pending_amount': float(sum(inst.amount for inst in yatra_installments)),
-                    'installments_paid': [],
-                    'installments_pending': [inst.label for inst in yatra_installments],
-                    'installments_info': installments_info,
-
-                    'accommodation': [],
-                    'journey': [],
-                    'custom_fields': [],
-                    'is_substitution': False,
-                    'pending_fees': None,
-
-                })
-
-        return Response({
-            'yatra': YatraSerializer(yatra, context={'request': request}).data,
-            'profiles': profiles_data,
-        })
-    
-
+            except Exception as e:
+                print("❌ ERROR OCCURRED:", type(e).__name__, str(e))
+                raise
 
     def post(self, request, yatra_id):
         """

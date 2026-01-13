@@ -116,3 +116,37 @@ class ProfileSerializer(serializers.ModelSerializer):
 
 
 
+
+class ProfileFastSerializer(serializers.ModelSerializer):
+    email = serializers.EmailField(source='user.email', read_only=True)
+    mentor_member_id = serializers.IntegerField(source='mentor.member_id', allow_null=True)
+    # Fix: point to the actual related field
+    mentor_name = serializers.CharField(source='mentor.full_name', allow_null=True, default=None)
+
+    class Meta:
+        model = Profile
+        fields = [
+            'id',
+            'member_id',
+            'user_type', 
+            'first_name',
+            'last_name',
+            'full_name',
+            'dob',
+            'gender',
+            'mobile',
+            'email',
+            'center',
+            'mentor_member_id',
+            'mentor_name',
+            'is_initiated',
+            'no_of_chanting_rounds',
+            'profile_picture',
+        ]
+
+
+
+
+
+
+

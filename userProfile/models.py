@@ -101,6 +101,9 @@ class Profile(models.Model):
     def formatted_member_id(self):
         """Return member_id as 6-digit string (e.g., 000123)."""
         return f"{self.member_id:06d}"
+    
+    def full_name(self):
+        return f"{self.first_name or ''} {self.last_name or ''}".strip()
 
     # def save(self, *args, **kwargs):
     #     if not self.member_id:
