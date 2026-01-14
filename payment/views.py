@@ -19,31 +19,6 @@ from rest_framework import status, permissions
 from django.db import connection
 from django.http import JsonResponse
 
-@api_view(["GET"])
-@permission_classes([permissions.AllowAny])
-@authentication_classes([])
-def keep_alive(request):
-    try:
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT 1;")
-            result = cursor.fetchone()[0]
-        return JsonResponse({
-            "app": "ok",
-            "db": "ok",
-            "db_response": result
-        })
-    except Exception as e:
-        return JsonResponse({
-            "app": "ok",
-            "db": "down",
-            "error": str(e)
-        }, status=503)
-# def keep_alive(request):
-#     with connection.cursor() as cursor:
-#             cursor.execute("SELECT 1;")
-#     return Response({"message": "Hi"})
-
-
 logger = logging.getLogger(__name__)
 
 class BatchPaymentProofView(APIView):

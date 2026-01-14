@@ -1,19 +1,17 @@
 from django.http import JsonResponse
 from django.shortcuts import render
-from django.shortcuts import render
+from django.views import View
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
+from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
-
 from yatra.serializers import *
 from yatra_substitution.models import SubstitutionRequest
 from .models import *
 from userProfile.serializers import *
 from .serializers import *
 from userProfile.models import *
-import uuid
 from payment.models import *
 from .models import YatraRegistration
 from django.db.models import (
@@ -21,7 +19,8 @@ from django.db.models import (
 )
 from django.db.models.functions import Concat
 from uuid import UUID
-
+from django.contrib.admin.views.decorators import staff_member_required
+from django.utils.decorators import method_decorator
 
 
 
@@ -875,8 +874,8 @@ class YatraRegistrationDetailView(APIView):
             return Response(blank_data, status=status.HTTP_200_OK)
 
 
-class MarkAttendanceView(APIView):
-    permission_classes = [IsAdminUser]
+@method_decorator(staff_member_required, name="dispatch")
+class MarkAttendanceView(View):
 
     def get(self, request, registration_id):
         try:
