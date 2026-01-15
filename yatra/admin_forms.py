@@ -4,10 +4,7 @@ SMALL_TEXTAREA = forms.Textarea(attrs={'rows': 2, 'cols': 40})
 
 
 from django import forms
-from .models import (
-    Yatra, YatraFormField, YatraJourney,
-    YatraAccommodation, YatraCustomFieldValue
-)
+from .models import *
 from .admin_forms import SMALL_TEXTAREA
 
 class YatraForm(forms.ModelForm):
@@ -53,4 +50,31 @@ class YatraCustomFieldValueForm(forms.ModelForm):
         fields = "__all__"
         widgets = {
             'value': SMALL_TEXTAREA,
+        }
+
+class YatraContactCategoryForm(forms.ModelForm):
+    class Meta:
+        model = YatraContactCategory
+        fields = "__all__"
+        widgets = {
+            'numbers': forms.Textarea(attrs={
+                'rows': 2,
+                'cols': 50,
+                "style": "width: 95%;",
+                'placeholder': 'Comma-separated numbers, e.g. 1234567890, Dr. Ramesh:1234567891'
+            }),
+        }
+
+
+class YatraImportantNoteForm(forms.ModelForm):
+    class Meta:
+        model = YatraImportantNote
+        fields = "__all__"
+        widgets = {
+            "note": forms.Textarea(attrs={
+                'rows': 2,
+                'cols': 40,
+                "style": "width: 95%;",
+                "placeholder": "Enter point-wise note"
+            })
         }

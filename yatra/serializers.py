@@ -17,9 +17,22 @@ class YatraInstallmentSerializer(serializers.ModelSerializer):
         model = YatraInstallment
         fields = ['label', 'amount']
 
+class YatraContactCategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = YatraContactCategory
+        fields = ['id', 'title', 'numbers','order', 'show_in_rcs']
+
+class YatraImportantNoteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = YatraImportantNote
+        fields = ['id', 'note', 'order', 'show_in_rcs']
+
+
 class YatraSerializer(serializers.ModelSerializer):
     form_fields = YatraFormFieldSerializer(many=True, read_only=True)
     installments = YatraInstallmentSerializer(many=True, read_only=True)
+    contact_categories  = YatraContactCategorySerializer(many=True, read_only=True)
+    important_notes = YatraImportantNoteSerializer(many=True,read_only=True)
 
     class Meta:
         model = Yatra
@@ -28,8 +41,10 @@ class YatraSerializer(serializers.ModelSerializer):
             'location', 'capacity', 'is_registration_open','payment_upi_id',    
             'form_fields', 'installments' , 'substitution_fee', 'cancellation_fee',
             'is_rcs_download_open','is_substitution_open','is_cancellation_open',  'close_yatra',
-             'payment_refund_date',           # ✅ NEW
-            'accept_full_payment_only_date',        # ✅ NEW
+             'payment_refund_date',
+            'accept_full_payment_only_date',
+            'contact_categories',
+            'important_notes',
         ]
 
 class AccommodationSerializer(serializers.ModelSerializer):

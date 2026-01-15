@@ -51,6 +51,18 @@ class YatraCustomFieldInline(nested_admin.NestedTabularInline):
     inlines = [YatraCustomFieldValueInline]   # <-- NESTED inside this inline
 
     
+class YatraContactCategoryInline(nested_admin.NestedTabularInline):
+    model = YatraContactCategory
+    extra = 1
+    form = YatraContactCategoryForm
+    fields = ['title', 'numbers', 'order', 'show_in_rcs']
+
+
+class YatraImportantNoteInline(nested_admin.NestedTabularInline):
+    model = YatraImportantNote
+    extra = 1
+    form = YatraImportantNoteForm 
+    fields = ['note', 'order', 'show_in_rcs']
 
 @admin.register(Yatra)
 class YatraAdmin(nested_admin.NestedModelAdmin):
@@ -58,25 +70,8 @@ class YatraAdmin(nested_admin.NestedModelAdmin):
     search_fields = ('title', 'location')
     list_filter = ('start_date', 'location')
     ordering = ('-created_at',)
-    inlines = [YatraFormFieldInline, YatraInstallmentInline,YatraJourneyInline, YatraAccommodationInline, YatraCustomFieldInline]
-
-    # def bulk_import_link(self, obj):
-    #     if not obj.is_registration_open:
-    #         return "-"
-    #     url = reverse('admin:yatra_bulk_offline_import', args=[obj.id])
-    #     return format_html('<a href="{}" class="button">Bulk Registrations</a>', url)
-    # bulk_import_link.short_description = "Bulk Registeration"
-
-    # def get_urls(self):
-    #     urls = super().get_urls()
-
-    #     custom_urls = [
-    #         path(
-    #             'bulk-offline-import/<uuid:yatra_id>/',
-    #             self.admin_site.admin_view(yatra_bulk_offline_import),
-    #             name='yatra_bulk_offline_import',
-    #         ),
-    #     ]
-    #     return custom_urls + urls
+    inlines = [YatraFormFieldInline, YatraInstallmentInline,
+               YatraJourneyInline, YatraAccommodationInline, YatraCustomFieldInline,
+               YatraContactCategoryInline, YatraImportantNoteInline]
 
 

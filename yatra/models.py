@@ -167,3 +167,49 @@ class YatraCustomFieldValue(models.Model):
 
     def __str__(self):
         return f"{self.custom_field.field_name} → {self.value}"
+
+
+
+class YatraContactCategory(models.Model):
+    yatra = models.ForeignKey(
+        Yatra,
+        on_delete=models.CASCADE,
+        related_name="contact_categories"
+    )
+    title = models.CharField(
+        max_length=255,
+        help_text="e.g., Yatra Information & Help Desk, Medical Emergency"
+    )
+    numbers = models.TextField(
+        blank=True,
+        help_text="Comma-separated numbers (optionally with name, e.g., Dr. Ramesh:1234567890)"
+    )
+    order = models.PositiveIntegerField(default=0)
+    show_in_rcs = models.BooleanField(default=True) 
+
+    class Meta:
+        ordering = ["order", "title"]
+        unique_together = ("yatra", "title")
+
+    def __str__(self):
+        return f"{self.yatra.title} → {self.title}"
+    
+class YatraImportantNote(models.Model):
+    yatra = models.ForeignKey(
+        Yatra,
+        on_delete=models.CASCADE,
+        related_name="important_notes"
+    )
+    note = models.TextField()
+    order = models.PositiveIntegerField(default=0)
+    show_in_rcs = models.BooleanField(
+        default=True,
+        help_text="If unchecked, this note will not appear in RCS"
+    )
+
+    class Meta:
+        ordering = ["order", "id"]
+
+    def __str__(self):
+        return f"{self.yatra.title} → Note {self.order}"
+
