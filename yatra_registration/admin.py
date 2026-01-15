@@ -145,6 +145,7 @@ class YatraRegistrationAdmin(admin.ModelAdmin):
         'installments_status',
         'accommodation_summary',
         'journey_summary',
+        'custom_field_summary',
         'registered_at',
     )
     search_fields = (
@@ -366,6 +367,30 @@ class YatraRegistrationAdmin(admin.ModelAdmin):
             return format_html("".join(html))
 
         return self._cache(obj, 'journey', compute)
+    
+        
+    @admin.display(description="Custom Fields")
+    def custom_field_summary(self, obj):
+        values = getattr(obj, '_pref_custom_values', [])
+
+        if not values:
+            return "No additional info"
+
+        html = ["<table style='width:100%; border-collapse:collapse; font-family:system-ui;'>"]
+
+        for v in values:
+            field = v.custom_field_value.custom_field.field_name
+            value = v.custom_field_value.value
+
+            html.append(f"""
+                <tr style="border-bottom:1px solid #eee;">
+                    <td style="padding:8px; font-weight:600; width:40%;">{field}</td>
+                    <td style="padding:8px;">{value}</td>
+                </tr>
+            """)
+
+        html.append("</table>")
+        return format_html("".join(html))
 
 #──────────────────────────────────────────────────────────────
     def mentor_full_name(self, obj):

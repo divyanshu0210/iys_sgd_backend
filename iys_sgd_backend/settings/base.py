@@ -116,6 +116,7 @@ TEMPLATES = [
         },
     },
 ]
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 10000
 
 # WSGI_APPLICATION = 'iys_sgd_backend.wsgi.application'
 DB_CONN_MAX_AGE = config("DB_CONN_MAX_AGE", default=300, cast=int)

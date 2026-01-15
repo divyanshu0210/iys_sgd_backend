@@ -375,5 +375,17 @@ if (window.location.search.includes('saved=1')) {
   });
   disableSaveButton();
 }
+
+document.getElementById('bulkForm').addEventListener('submit', function () {
+  document.querySelectorAll('.data-row').forEach(row => {
+    const checkbox = row.querySelector('.row-select');
+    if (!checkbox || !checkbox.checked) {
+      row.querySelectorAll('input, select, textarea').forEach(el => {
+        el.disabled = true;
+      });
+    }
+  });
+});
+
 </script>
 {% endblock %}

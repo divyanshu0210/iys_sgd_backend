@@ -121,6 +121,7 @@ TEMPLATES = [
         },
     },
 ]
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 10000
 
 WSGI_APPLICATION = 'iys_sgd_backend.wsgi.application'
 
