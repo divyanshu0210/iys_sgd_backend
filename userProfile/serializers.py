@@ -140,6 +140,7 @@ class ProfileFastSerializer(serializers.ModelSerializer):
             'mentor_member_id',
             'mentor_name',
             'is_initiated',
+            'initiated_name',
             'no_of_chanting_rounds',
             'profile_picture',
         ]
