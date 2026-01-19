@@ -6,16 +6,11 @@ from .models import *
 from django.urls import path
 from .admin_views import *
 from django.utils import timezone
-
-# admin.py (inside your YatraRegistrationAdmin file)
-
 from django import forms
 from django.contrib import admin
 from django.urls import reverse
 from django.utils.html import format_html
 from django.db.models import Prefetch
-
-
 from django.contrib.admin import SimpleListFilter
 
 class YatraListFilter(SimpleListFilter):
@@ -30,6 +25,34 @@ class YatraListFilter(SimpleListFilter):
     def queryset(self, request, queryset):
         if self.value():
             return queryset.filter(yatra_id=self.value())
+        return queryset
+    
+
+class RCSDownloadedFilter(SimpleListFilter):
+    title = "RCS Downloaded"
+    parameter_name = "rcs_downloaded"
+
+    def lookups(self, request, model_admin):
+        return (
+            ("yes", "Yes"),
+            ("no", "No"),
+        )
+
+    def queryset(self, request, queryset):
+        value = self.value()
+
+        if value == "yes":
+            return queryset.filter(
+                rcs_download_event__count__gt=0
+            )
+
+        if value == "no":
+            return queryset.filter(
+                rcs_download_event__isnull=True
+            ) | queryset.filter(
+                rcs_download_event__count=0
+            )
+
         return queryset
 
 # ──────────────────────────────────────────────────────────────
@@ -158,7 +181,7 @@ class YatraRegistrationAdmin(admin.ModelAdmin):
         'registered_by__last_name',
     )
     list_filter = (
-        YatraListFilter,'status', 'registered_at')
+        YatraListFilter,'status', 'registered_at',RCSDownloadedFilter,)
     ordering = ('-registered_at',)
     # list_per_page = 25            
     # show_full_result_count = False
