@@ -4,6 +4,7 @@ from userProfile.models import Profile
 from payment.models import Payment
 from django.core.exceptions import ValidationError
 from yatra.models import *
+from django.utils import timezone
 
     
 class YatraEligibility(models.Model):
@@ -192,4 +193,29 @@ class RegistrationCustomFieldValue(models.Model):
     class Meta:
         unique_together = ('registration', 'custom_field')
 
+class RCSDownloadEvent(models.Model):
+    registration = models.OneToOneField(
+        "YatraRegistration",
+        on_delete=models.CASCADE,
+        related_name="rcs_download_event"
+    )
+    count = models.PositiveIntegerField(default=0)
+    timestamps = models.JSONField(default=list, blank=True)
+    last_downloaded_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        indexes = [
+            models.Index(fields=["registration"]),
+            models.Index(fields=["last_downloaded_at"]),
+        ]
+
+    def record_download(self):
+        now = timezone.now()
+        self.count += 1
+        self.timestamps.append(now.isoformat())
+        self.last_downloaded_at = now
+        self.save(update_fields=["count", "timestamps", "last_downloaded_at"])
+
+    def __str__(self):
+        return f"RCS downloads: {self.count} for {self.registration_id}"

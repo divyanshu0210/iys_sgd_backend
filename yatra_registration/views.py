@@ -874,6 +874,26 @@ class YatraRegistrationDetailView(APIView):
             return Response(blank_data, status=status.HTTP_200_OK)
 
 
+class TrackRCSDownloadAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, registration_id):
+        registration = get_object_or_404(
+            YatraRegistration,
+            id=registration_id
+        )
+        event, created = RCSDownloadEvent.objects.get_or_create(
+            registration=registration
+        )
+        event.record_download()
+        return Response(
+            {
+                "ok": True,
+                "count": event.count,
+            },
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK
+        )
+
 @method_decorator(staff_member_required, name="dispatch")
 class MarkAttendanceView(View):
 

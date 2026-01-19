@@ -5,6 +5,7 @@ from yatra_registration.bulk_import_admin_views import yatra_bulk_offline_import
 from .models import *
 from django.urls import path
 from .admin_views import *
+from django.utils import timezone
 
 # admin.py (inside your YatraRegistrationAdmin file)
 
@@ -143,10 +144,11 @@ class YatraRegistrationAdmin(admin.ModelAdmin):
         'total_amount_display',
         'paid_amount_display',
         'installments_status',
+        'registered_at',
         'accommodation_summary',
         'journey_summary',
         'custom_field_summary',
-        'registered_at',
+        'rcs_downloads'
     )
     search_fields = (
         'yatra__title',
@@ -392,6 +394,40 @@ class YatraRegistrationAdmin(admin.ModelAdmin):
         html.append("</table>")
         return format_html("".join(html))
 
+
+    @admin.display(description="RCS Downloads")
+    def rcs_downloads(self, obj):
+        event = getattr(obj, "_pref_rcs_downloads", None)
+
+        if not event or event.count == 0:
+            return "0"
+
+        times = [
+            timezone.localtime(
+                timezone.datetime.fromisoformat(ts)
+            ).strftime("%d %b %Y %H:%M")
+            for ts in reversed(event.timestamps)
+        ]
+        tooltip_html= "HISTORY\n──────────\n" + "\n".join(times)
+        last = timezone.localtime(event.last_downloaded_at).strftime(
+            "%d %b %Y %H:%M"
+        )
+
+        return format_html(
+            """
+            <span title="{}"
+                style="
+                    cursor: pointer;
+                    border-bottom: 1px dotted #666;
+                    white-space: nowrap;
+                ">
+                {} (last: {})
+            </span>
+            """,
+            tooltip_html,
+            event.count,
+            last
+        )
 #──────────────────────────────────────────────────────────────
     def mentor_full_name(self, obj):
         """Return mentor full name of the person who is registered_for."""
@@ -419,6 +455,11 @@ class YatraRegistrationAdmin(admin.ModelAdmin):
             'registered_for__mentor',
             'registered_by',
         ).prefetch_related(
+               Prefetch(
+            'rcs_download_event',
+            queryset=RCSDownloadEvent.objects.order_by('created_at'),
+            to_attr='_pref_rcs_downloads',
+            ),
             
             Prefetch(
                 'installments',

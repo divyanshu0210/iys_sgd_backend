@@ -11,5 +11,5 @@ urlpatterns = [
         YatraRegistrationDetailView.as_view(), 
         name='yatra-registration-detail'),
     path('mark-attendance/<uuid:registration_id>/', MarkAttendanceView.as_view(), name='mark-attendance'),
-
+    path( "<uuid:registration_id>/rcs-download/",TrackRCSDownloadAPIView.as_view(),name="track-rcs-download"),
 ]
