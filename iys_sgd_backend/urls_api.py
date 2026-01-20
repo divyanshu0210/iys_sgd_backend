@@ -20,6 +20,7 @@ urlpatterns = [
     path('payments/', include('payment.urls')),  # Payment app URLs
     path('yatra-transfers/', include('yatra_substitution.urls')),  # Payment app URLs
     path('announcements/', include('announcements.urls')),  # Announcements app URLs
+    path('learning_material/', include('learning_material.urls')),
 
       # Auth APIs
     path('api/auth/', include('dj_rest_auth.urls')),  # login/logout/password reset/change

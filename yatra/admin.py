@@ -1,4 +1,5 @@
 from django.contrib import admin
+from learning_material.models import Resource
 from yatra_registration.bulk_import_admin_views import yatra_bulk_offline_import
 from .models import *
 from django.urls import reverse
@@ -64,6 +65,12 @@ class YatraImportantNoteInline(nested_admin.NestedTabularInline):
     form = YatraImportantNoteForm 
     fields = ['note', 'order', 'show_in_rcs']
 
+class YatraResourceInline(nested_admin.NestedTabularInline):
+    model = Resource
+    extra = 1
+    fields = ('title','subtitle','category','resource_type','language','link_url','thumbnail','order','is_active',)
+    ordering = ('order',)
+
 @admin.register(Yatra)
 class YatraAdmin(nested_admin.NestedModelAdmin):
     list_display = ('id','title', 'location', 'start_date', 'end_date', 'capacity','payment_upi_id', 'created_at')
@@ -72,6 +79,6 @@ class YatraAdmin(nested_admin.NestedModelAdmin):
     ordering = ('-created_at',)
     inlines = [YatraFormFieldInline, YatraInstallmentInline,
                YatraJourneyInline, YatraAccommodationInline, YatraCustomFieldInline,
-               YatraContactCategoryInline, YatraImportantNoteInline]
+               YatraContactCategoryInline, YatraImportantNoteInline,YatraResourceInline]
 
 
