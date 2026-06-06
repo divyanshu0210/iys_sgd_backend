@@ -81,6 +81,7 @@ class ProfileView(APIView):
                             "frontend_url": home_url,
                         },
                         recipient=new_mentor.user.email,
+                        fail_silently=True,
                     )
 
         serializer = ProfileSerializer(profile, data=request.data, partial=True, context={'request': request})
@@ -221,6 +222,7 @@ class MentorRequestView(APIView):
                     "frontend_url": home_url,
                 },
                 recipient=mentee_email,
+                fail_silently=True,
             )
 
         return Response({"message": "Mentee request approved successfully."}, status=status.HTTP_200_OK)
@@ -265,6 +267,7 @@ class MentorRequestView(APIView):
                     "frontend_url": home_url,
                 },
                 recipient=mentee_email,
+                fail_silently=True,
             )
 
         return Response({"message": "Request rejected."}, status=status.HTTP_200_OK)

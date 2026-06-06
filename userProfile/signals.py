@@ -48,6 +48,7 @@ def create_or_update_user_profile(sender, instance, created, **kwargs):
                             "frontend_url": settings.FRONTEND_BASE_URL,
                         },
                         recipient=instance.email,
+                        fail_silently=True,
                     )
                 except Exception:
                     pass

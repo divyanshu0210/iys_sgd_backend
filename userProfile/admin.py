@@ -17,6 +17,7 @@ class ProfileAdmin(admin.ModelAdmin):
         'user_type',
         'first_name',
         'last_name',
+        'dob',
         'mobile',
         'center',
         'spiritual_master',

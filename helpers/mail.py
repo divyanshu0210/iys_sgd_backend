@@ -3,10 +3,12 @@ from django.template.loader import render_to_string
 from django.conf import settings
 
 
-def send_template_email(subject, template_name, context, recipient):
+def send_template_email(subject, template_name, context, recipient, fail_silently=False):
     """
     Render an HTML email template and send it.
     Falls back to strip_tags plain text automatically.
+    Pass fail_silently=True for non-critical emails (welcome, notifications).
+    Leave False (default) for critical emails (password reset) so errors surface.
     """
     html_body = render_to_string(f"emails/{template_name}", context)
 
@@ -17,7 +19,7 @@ def send_template_email(subject, template_name, context, recipient):
         to=[recipient],
     )
     msg.attach_alternative(html_body, "text/html")
-    msg.send(fail_silently=True)
+    msg.send(fail_silently=fail_silently)
 
 
 def _html_to_text(html):
