@@ -1,0 +1,9 @@
+{% extends "emails/base.html" %}
+{% block content %}
+<p class="greeting">Hare Krishna, {{ mentor_name }}!</p>
+<p><strong>{{ mentee_name }}</strong> has requested you to be their mentor on the IYS Spiritual Growth Dashboard.</p>
+<p>Please log in to your dashboard to review and respond to this mentorship request.</p>
+<p style="text-align:center;">
+  <a class="btn" href="{{ frontend_url }}">Review Request</a>
+</p>
+{% endblock %}

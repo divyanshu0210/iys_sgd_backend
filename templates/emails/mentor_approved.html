@@ -1,0 +1,9 @@
+{% extends "emails/base.html" %}
+{% block content %}
+<p class="greeting">Hare Krishna, {{ mentee_name }}!</p>
+<p>Great news — <strong>{{ mentor_name }}</strong> has approved your mentorship request.</p>
+<p>You are now officially connected as a mentee. Visit your dashboard to get started.</p>
+<p style="text-align:center;">
+  <a class="btn" href="{{ frontend_url }}">Go to Dashboard</a>
+</p>
+{% endblock %}

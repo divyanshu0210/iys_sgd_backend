@@ -4,6 +4,8 @@ from django.dispatch import receiver
 from django.contrib.auth.models import User
 from django.db import transaction
 from django.utils import timezone
+from django.conf import settings
+from helpers.mail import send_template_email
 
 
 from userProfile.utils import CENTER_CODE_MAP, DEFAULT_OTHER_CENTER_CODE, PENDING_APPROVAL_CODE, generate_member_id
@@ -17,10 +19,6 @@ def create_or_update_user_profile(sender, instance, created, **kwargs):
     Using transaction.on_commit ensures DB is stable (useful in tests/transactions).
     """
     if created:
-        # Create profile after the transaction commits
-        # def _create_profile():
-        #     Profile.objects.get_or_create(user=instance, defaults={'username': instance.username})
-        # transaction.on_commit(_create_profile)
         def _create_profile():
             with transaction.atomic():
                 profile, is_created = Profile.objects.select_for_update().get_or_create(
@@ -39,6 +37,20 @@ def create_or_update_user_profile(sender, instance, created, **kwargs):
                         center_code=PENDING_APPROVAL_CODE
                     )
                     profile.save(update_fields=["member_id"])
+
+            if instance.email:
+                try:
+                    send_template_email(
+                        subject="Welcome to IYS!",
+                        template_name="welcome.html",
+                        context={
+                            "name": instance.first_name or instance.username,
+                            "frontend_url": settings.FRONTEND_BASE_URL,
+                        },
+                        recipient=instance.email,
+                    )
+                except Exception:
+                    pass
 
         transaction.on_commit(_create_profile)
     else:

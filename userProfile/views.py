@@ -6,7 +6,7 @@ from .serializers import *
 from django.shortcuts import get_object_or_404
 from rest_framework.permissions import IsAdminUser, AllowAny, IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
-from django.core.mail import send_mail
+from helpers.mail import send_template_email
 from django.conf import settings
 from django.utils import timezone
 
@@ -71,20 +71,17 @@ class ProfileView(APIView):
                 MentorRequest.objects.get_or_create(from_user=profile, to_mentor=new_mentor)
 
                 # ✅ Send notification email to mentor
-                # if new_mentor.user.email:
-                #     send_mail(
-                #         subject="New Mentee Request 💬",
-                #         message=(
-                #             f"Dear {new_mentor.first_name or new_mentor.user.username},\n\n"
-                #             f"{profile.first_name or profile.user.username} has requested you to be their mentor.\n\n"
-                #             f"Please review and respond to this mentorship request in your dashboard.\n\n"
-                #             f"Visit your dashboard: {home_url}\n\n"
-                #             f"Hare Krishna!"
-                #         ),
-                #         from_email=settings.DEFAULT_FROM_EMAIL,
-                #         recipient_list=[new_mentor.user.email],
-                #         fail_silently=True,
-                #     )
+                if new_mentor.user.email:
+                    send_template_email(
+                        subject="New Mentee Request",
+                        template_name="mentor_request.html",
+                        context={
+                            "mentor_name": new_mentor.first_name or new_mentor.user.username,
+                            "mentee_name": profile.first_name or profile.user.username,
+                            "frontend_url": home_url,
+                        },
+                        recipient=new_mentor.user.email,
+                    )
 
         serializer = ProfileSerializer(profile, data=request.data, partial=True, context={'request': request})
         if not serializer.is_valid():
@@ -214,20 +211,17 @@ class MentorRequestView(APIView):
 
         # ✅ Send email notification to mentee
         mentee_email = mentee.user.email
-        # if mentee_email:
-        #     send_mail(
-        #         subject="Mentor Request Approved ✅",
-        #         message=(
-        #             f"Dear {mentee.first_name or mentee.user.username},\n\n"
-        #             f"Your mentor request to {mentor_profile.first_name or mentor_profile.user.username} has been approved.\n\n"
-        #             f"You are now connected as a mentee.\n\n"
-        #             f"Visit your dashboard: {home_url}\n\n"
-        #             f"Hare Krishna!"
-        #         ),
-        #         from_email=settings.DEFAULT_FROM_EMAIL,
-        #         recipient_list=[mentee_email],
-        #         fail_silently=True,
-        #     )
+        if mentee_email:
+            send_template_email(
+                subject="Mentor Request Approved",
+                template_name="mentor_approved.html",
+                context={
+                    "mentee_name": mentee.first_name or mentee.user.username,
+                    "mentor_name": mentor_profile.first_name or mentor_profile.user.username,
+                    "frontend_url": home_url,
+                },
+                recipient=mentee_email,
+            )
 
         return Response({"message": "Mentee request approved successfully."}, status=status.HTTP_200_OK)
 
@@ -261,21 +255,17 @@ class MentorRequestView(APIView):
         req.delete()
 
         # Send rejection email
-        # if mentee_email:
-        #     send_mail(
-        #         subject="Mentor Request Update",
-        #         message=(
-        #             f"Dear {mentee.first_name or mentee.user.username},\n\n"
-        #             f"Your mentor request to {mentor_profile.first_name or mentor_profile.user.username} "
-        #             f"was not accepted at this time.\n\n"
-        #             f"Please feel free to request another mentor.\n\n"
-        #             f"Visit profile: {home_url}\n\n"
-        #             f"Hare Krishna!"
-        #         ),
-        #         from_email=settings.DEFAULT_FROM_EMAIL,
-        #         recipient_list=[mentee_email],
-        #         fail_silently=True,
-        #     )
+        if mentee_email:
+            send_template_email(
+                subject="Mentor Request Update",
+                template_name="mentor_rejected.html",
+                context={
+                    "mentee_name": mentee.first_name or mentee.user.username,
+                    "mentor_name": mentor_profile.first_name or mentor_profile.user.username,
+                    "frontend_url": home_url,
+                },
+                recipient=mentee_email,
+            )
 
         return Response({"message": "Request rejected."}, status=status.HTTP_200_OK)
     

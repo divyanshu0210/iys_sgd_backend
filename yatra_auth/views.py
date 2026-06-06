@@ -6,7 +6,7 @@ from django.contrib.auth.models import User
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import force_bytes
-from django.core.mail import send_mail
+from helpers.mail import send_template_email
 from .serializers import (
     PasswordResetRequestSerializer,
     PasswordResetConfirmSerializer,
@@ -44,11 +44,11 @@ class PasswordResetRequestView(APIView):
         reset_link = f"{settings.FRONTEND_BASE_URL}reset-password/{uid}/{token}"
 
         try:
-            send_mail(
+            send_template_email(
                 subject="Password Reset",
-                message=f"Click the link to reset password:\n{reset_link}",
-                from_email=f'{settings.DEFAULT_FROM_EMAIL}',
-                recipient_list=[email],
+                template_name="password_reset.html",
+                context={"reset_link": reset_link},
+                recipient=email,
             )
         except Exception as e:
             logger.exception("Password reset email failed")
