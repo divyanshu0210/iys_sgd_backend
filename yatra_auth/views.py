@@ -12,6 +12,7 @@ from .serializers import (
     PasswordResetConfirmSerializer,
 )
 from rest_framework.permissions import AllowAny
+from rest_framework.throttling import ScopedRateThrottle
 from allauth.account.views import ConfirmEmailView
 from django.shortcuts import redirect
 from django.http import Http404
@@ -30,7 +31,10 @@ class CustomConfirmEmailView(ConfirmEmailView):
         
 
 class PasswordResetRequestView(APIView):
-    permission_classes = [AllowAny]  # <- add this
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'password_reset'
+
     def post(self, request):
         serializer = PasswordResetRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)

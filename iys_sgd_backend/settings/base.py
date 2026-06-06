@@ -47,6 +47,8 @@ INSTALLED_APPS = [
     
     'django.contrib.sites',
 
+    'anymail',
+
     # REST framework + auth
     'rest_framework',
     'rest_framework.authtoken',
@@ -193,13 +195,19 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        
-        'rest_framework.authentication.TokenAuthentication',  # if using TokenAuth
+        'rest_framework.authentication.TokenAuthentication',
         'rest_framework.authentication.SessionAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '100/day',
+        'password_reset': '5/hour',
+    },
 }
 
 REST_USE_JWT = True
@@ -209,15 +217,13 @@ JWT_AUTH_REFRESH_COOKIE = 'refresh'
 # if DEBUG:
 #     EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 # else : 
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'smtp.gmail.com'
-EMAIL_PORT = 587
-EMAIL_USE_TLS = True
-EMAIL_USE_SSL = False
-EMAIL_HOST_PASSWORD =config("EMAIL_HOST_PASSWORD")
-EMAIL_HOST_USER =config("EMAIL_HOST_USER")
-DEFAULT_FROM_EMAIL = f'IYS_sgd <{config("EMAIL_HOST_USER")}>'
-ACCOUNT_EMAIL_SUBJECT_PREFIX=''
+EMAIL_BACKEND = 'anymail.backends.brevo.EmailBackend'  # default, overridden per-send
+ANYMAIL = {
+    'RESEND_API_KEY': config('RESEND_API_KEY'),
+    'BREVO_API_KEY': config('BREVO_API_KEY'),
+}
+DEFAULT_FROM_EMAIL = 'IYS_sgd <noreply@iys-sgd.in>'
+ACCOUNT_EMAIL_SUBJECT_PREFIX = ''
 
 ACCOUNT_SIGNUP_FIELDS =[ 'email*', 'password1*', 'password2*']
 ACCOUNT_LOGIN_METHODS ={ 'email'}
