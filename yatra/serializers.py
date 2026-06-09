@@ -53,6 +53,7 @@ class YatraSerializer(serializers.ModelSerializer):
             'contact_categories',
             'important_notes',
             'registration_policy',
+            'poster',
         ]
 
 class AccommodationSerializer(serializers.ModelSerializer):

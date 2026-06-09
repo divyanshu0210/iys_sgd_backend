@@ -90,6 +90,10 @@ class Profile(models.Model):
     mentor = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL)
     profile_picture = models.ImageField(upload_to=profile_picture_upload_path, blank=True, null=True)
 
+    iskcon_introduction_date = models.DateField(blank=True, null=True)
+    iskcon_introduced_by = models.CharField(max_length=255, blank=True, null=True)
+    first_connected_center = models.CharField(max_length=255, blank=True, null=True)
+
     # 🔹 New Field — Number of Chanting Rounds
     no_of_chanting_rounds = models.PositiveIntegerField(default=0, help_text="Number of daily chanting rounds")
 

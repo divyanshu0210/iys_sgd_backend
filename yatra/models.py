@@ -30,6 +30,12 @@ class Yatra(models.Model):
         blank=True, null=True,
         help_text="After this date, partial installment payment is not allowed for new registrations."
     )
+    poster = models.ImageField(
+        upload_to="yatra/posters/",
+        blank=True,
+        null=True,
+        help_text="Poster image displayed on the yatra listing card."
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

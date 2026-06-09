@@ -115,8 +115,15 @@ class YatraAdmin(nested_admin.NestedModelAdmin):
     search_fields = ('title', 'location')
     list_filter = ('start_date', 'location')
     ordering = ('-created_at',)
+    readonly_fields = ('poster_preview',)
     inlines = [RegistrationPolicyInline, YatraFormFieldInline, YatraInstallmentInline,
                YatraJourneyInline, YatraAccommodationInline, YatraCustomFieldInline,
                YatraContactCategoryInline, YatraImportantNoteInline,YatraResourceInline]
+
+    def poster_preview(self, obj):
+        if obj.poster:
+            return format_html('<img src="{}" style="max-height:200px; border-radius:8px;" />', obj.poster.url)
+        return "No poster uploaded"
+    poster_preview.short_description = "Poster Preview"
 
 
