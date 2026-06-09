@@ -166,12 +166,28 @@ class YatraEligibilityView(APIView):
             })
 
         # =====================================================
-        # 6. RESPONSE
+        # 6. POLICY: if requires_approval=False, mark all as approved
+        # =====================================================
+        policy = getattr(yatra, 'registration_policy', None)
+        requires_approval = policy.requires_approval if policy else True
+
+        if not requires_approval:
+            for idx in range(len(profiles_data)):
+                profiles_data[idx].update({
+                    'is_approved': True,
+                    'approved_by': None,
+                    'approved_at': None,
+                    'is_self': profiles[idx].id == mentor.id,
+                })
+
+        # =====================================================
+        # 7. RESPONSE
         # =====================================================
         return Response({
             'yatra': {
                 'id': str(yatra.id),
                 'title': yatra.title,
+                'requires_approval': requires_approval,
             },
             'profiles': profiles_data,
             'total_mentees': len(mentee_ids),
@@ -372,9 +388,16 @@ class YatraRegistrationView(APIView):
                 profile_ids = list(mentees)
 
                 # =====================================================
+                # POLICY CHECK
+                # =====================================================
+                policy = getattr(yatra, 'registration_policy', None)
+                requires_approval = policy.requires_approval if policy else True
+                min_rounds = policy.min_chanting_rounds if policy else 0
+
+                # =====================================================
                 # ADD SELF IF ELIGIBLE
                 # =====================================================
-                if YatraEligibility.objects.filter(
+                if not requires_approval or YatraEligibility.objects.filter(
                     yatra=yatra,
                     profile=user_profile,
                     is_approved=True
@@ -487,7 +510,7 @@ class YatraRegistrationView(APIView):
                     registration = registration_map.get(pid)
 
                     pdata.update({
-                        'is_eligible': eligibility.is_approved if eligibility else False,
+                        'is_eligible': True if not requires_approval else (eligibility.is_approved if eligibility else False),
                         'is_self': pid == user_profile.id,
                         'approved_by': (
                             str(eligibility.approved_by.member_id)
@@ -640,6 +663,9 @@ class YatraRegistrationView(APIView):
             return Response({'error': 'Invalid data format. Expected object of profile_id -> registration info.'},
                             status=status.HTTP_400_BAD_REQUEST)
 
+        policy = getattr(yatra, 'registration_policy', None)
+        requires_approval = policy.requires_approval if policy else True
+
         created_or_updated = []
         errors = []
 
@@ -650,8 +676,8 @@ class YatraRegistrationView(APIView):
                 errors.append(f'Invalid profile ID: {profile_id}')
                 continue
 
-            # --- Eligibility check ---
-            if not self._check_eligibility(yatra, profile, registrant):
+            # --- Eligibility check (skipped when requires_approval=False) ---
+            if requires_approval and not self._check_eligibility(yatra, profile, registrant):
                 errors.append(f'{profile} is not eligible for registration')
                 continue
 

@@ -35,6 +35,23 @@ class Yatra(models.Model):
     def __str__(self):
         return self.title
 
+class RegistrationPolicy(models.Model):
+    yatra = models.OneToOneField(
+        Yatra, on_delete=models.CASCADE, related_name='registration_policy'
+    )
+    requires_approval = models.BooleanField(
+        default=True,
+        help_text="If unchecked, the yatra is open to all — mentor approval step is skipped entirely."
+    )
+    min_chanting_rounds = models.IntegerField(
+        default=0,
+        help_text="Minimum daily chanting rounds required to register. Set 0 to disable."
+    )
+
+    def __str__(self):
+        return f"Policy → {self.yatra.title}"
+
+
 class YatraFormField(models.Model):
     FIELD_TYPES = [
         ('text', 'Text'),
