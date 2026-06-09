@@ -18,8 +18,26 @@ class Event(models.Model):
         ("completed", "Completed"),
     ]
 
+    CATEGORY_CHOICES = [
+        ("event",        "Event — Full event with image, date & registration"),
+        ("workshop",     "Workshop — Structured session with image & details"),
+        ("announcement", "Announcement — Short positive news (one-liner)"),
+        ("notice",       "Notice — Administrative/important alert (one-liner)"),
+    ]
+
+    category = models.CharField(
+        max_length=20,
+        choices=CATEGORY_CHOICES,
+        default="event",
+        help_text="Controls how this item is displayed on the home page.",
+    )
+
     title = models.CharField(max_length=200)
-    description = models.TextField()
+    description = models.TextField(
+        blank=True,
+        default="",
+        help_text="Keep to one line for Announcement / Notice categories.",
+    )
 
     poster = models.ImageField(
         upload_to="events/posters/",

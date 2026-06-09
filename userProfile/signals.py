@@ -38,20 +38,20 @@ def create_or_update_user_profile(sender, instance, created, **kwargs):
                     )
                     profile.save(update_fields=["member_id"])
 
-            if instance.email:
-                try:
-                    send_template_email(
-                        subject="Welcome to IYS!",
-                        template_name="welcome.html",
-                        context={
-                            "name": instance.first_name or instance.username,
-                            "frontend_url": settings.FRONTEND_BASE_URL,
-                        },
-                        recipient=instance.email,
-                        fail_silently=True,
-                    )
-                except Exception:
-                    pass
+            # if instance.email:
+            #     try:
+            #         send_template_email(
+            #             subject="Welcome to IYS!",
+            #             template_name="welcome.html",
+            #             context={
+            #                 "name": instance.first_name or instance.username,
+            #                 "frontend_url": settings.FRONTEND_BASE_URL,
+            #             },
+            #             recipient=instance.email,
+            #             fail_silently=True,
+            #         )
+            #     except Exception:
+            #         pass
 
         transaction.on_commit(_create_profile)
     else:

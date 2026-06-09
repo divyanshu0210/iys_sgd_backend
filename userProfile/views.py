@@ -210,20 +210,19 @@ class MentorRequestView(APIView):
         mentee.user_type = 'devotee'  # Update user_type to 'devotee'
         mentee.save()
 
-        # ✅ Send email notification to mentee
-        mentee_email = mentee.user.email
-        if mentee_email:
-            send_template_email(
-                subject="Mentor Request Approved",
-                template_name="mentor_approved.html",
-                context={
-                    "mentee_name": mentee.first_name or mentee.user.username,
-                    "mentor_name": mentor_profile.first_name or mentor_profile.user.username,
-                    "frontend_url": home_url,
-                },
-                recipient=mentee_email,
-                fail_silently=True,
-            )
+        # mentee_email = mentee.user.email
+        # if mentee_email:
+        #     send_template_email(
+        #         subject="Mentor Request Approved",
+        #         template_name="mentor_approved.html",
+        #         context={
+        #             "mentee_name": mentee.first_name or mentee.user.username,
+        #             "mentor_name": mentor_profile.first_name or mentor_profile.user.username,
+        #             "frontend_url": home_url,
+        #         },
+        #         recipient=mentee_email,
+        #         fail_silently=True,
+        #     )
 
         return Response({"message": "Mentee request approved successfully."}, status=status.HTTP_200_OK)
 
@@ -256,19 +255,18 @@ class MentorRequestView(APIView):
         # Delete request
         req.delete()
 
-        # Send rejection email
-        if mentee_email:
-            send_template_email(
-                subject="Mentor Request Update",
-                template_name="mentor_rejected.html",
-                context={
-                    "mentee_name": mentee.first_name or mentee.user.username,
-                    "mentor_name": mentor_profile.first_name or mentor_profile.user.username,
-                    "frontend_url": home_url,
-                },
-                recipient=mentee_email,
-                fail_silently=True,
-            )
+        # if mentee_email:
+        #     send_template_email(
+        #         subject="Mentor Request Update",
+        #         template_name="mentor_rejected.html",
+        #         context={
+        #             "mentee_name": mentee.first_name or mentee.user.username,
+        #             "mentor_name": mentor_profile.first_name or mentor_profile.user.username,
+        #             "frontend_url": home_url,
+        #         },
+        #         recipient=mentee_email,
+        #         fail_silently=True,
+        #     )
 
         return Response({"message": "Request rejected."}, status=status.HTTP_200_OK)
     

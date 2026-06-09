@@ -1,0 +1,64 @@
+{% extends "admin/change_form.html" %}
+
+{% block extrahead %}
+{{ block.super }}
+<script>
+(function ($) {
+  'use strict';
+
+  var HIDE_FIELDSETS = {
+    announcement: ['YouTube', 'Location', 'Registration', 'Event Configuration', 'Configuration'],
+    notice:       ['YouTube', 'Location', 'Registration', 'Event Configuration', 'Configuration'],
+    workshop:     ['YouTube'],
+    event:        [],
+  };
+
+  var HIDE_FIELD_ROWS = {
+    announcement: ['id_poster', 'id_event_type', 'id_status', 'id_description'],
+    notice:       ['id_poster', 'id_event_type', 'id_status', 'id_description'],
+    workshop:     [],
+    event:        [],
+  };
+
+  function applyCategory(category) {
+    // Reset — show everything first
+    $('fieldset.module').show();
+    $('fieldset.module .form-row').show();
+
+    var hideFieldsets = HIDE_FIELDSETS[category] || [];
+    var hideFieldRows = HIDE_FIELD_ROWS[category] || [];
+
+    // Hide entire fieldsets by heading keyword match
+    $('fieldset.module h2').each(function () {
+      var heading = $(this).text().trim();
+      var shouldHide = hideFieldsets.some(function (kw) {
+        return heading.indexOf(kw) !== -1;
+      });
+      if (shouldHide) {
+        $(this).closest('fieldset').hide();
+      }
+    });
+
+    // Hide individual field rows
+    hideFieldRows.forEach(function (fieldId) {
+      var $field = $('#' + fieldId);
+      if ($field.length) {
+        $field.closest('.form-row').hide();
+      }
+    });
+  }
+
+  $(document).ready(function () {
+    var $category = $('#id_category');
+    if (!$category.length) return;
+
+    applyCategory($category.val());
+
+    $category.on('change', function () {
+      applyCategory($(this).val());
+    });
+  });
+
+})(django.jQuery);
+</script>
+{% endblock %}
