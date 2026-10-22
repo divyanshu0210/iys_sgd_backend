@@ -4,8 +4,36 @@ from .models import *
 from django.contrib import admin
 from django.utils.timezone import localtime
 from django.utils.html import format_html
-from django.db.models import Prefetch, Max
+from django.db.models import Prefetch, Max, Q
 from django.db.models import OuterRef, Subquery, BooleanField, DateTimeField
+from django import forms
+
+
+class BaceAdminForm(forms.ModelForm):
+    class Meta:
+        model = Bace
+        fields = '__all__'
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['counsellor'].required = True
+        self.fields['counsellor'].queryset = Profile.objects.filter(user_type='counsellor').order_by('first_name', 'last_name')
+        self.fields['mentors'].queryset = Profile.objects.filter(
+            Q(user_type='mentor') | Q(user__is_superuser=True)
+        ).order_by('first_name', 'last_name')
+
+
+@admin.register(Bace)
+class BaceAdmin(admin.ModelAdmin):
+    form = BaceAdminForm
+    list_display = ('name', 'is_active', 'counsellor', 'mentor_count')
+    list_filter = ('is_active',)
+    search_fields = ('name', 'counsellor__first_name', 'counsellor__last_name')
+    filter_horizontal = ('mentors',)
+
+    def mentor_count(self, obj):
+        return obj.mentors.count()
+    mentor_count.short_description = 'Mentors'
 
 
 @admin.register(Profile)
@@ -80,7 +108,7 @@ class ProfileAdmin(admin.ModelAdmin):
             )
 
     def formatted_member_id(self, obj):
-        return f"{obj.member_id:06d}"
+        return f"{obj.member_id:06d}" if obj.member_id is not None else "-"
     formatted_member_id.short_description = "Member ID"
 
     def user_username(self, obj):
@@ -93,7 +121,9 @@ class ProfileAdmin(admin.ModelAdmin):
     # ---------------------------
 
     def mentor_display(self, obj):
-        return obj.mentor.formatted_member_id() if obj.mentor else "-"
+        if not obj.mentor or obj.mentor.member_id is None:
+            return "-"
+        return obj.mentor.formatted_member_id()
     mentor_display.short_description = "Mentor ID"
 
     def mentor_request_approved(self, obj):

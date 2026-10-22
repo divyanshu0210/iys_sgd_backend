@@ -9,11 +9,53 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from helpers.mail import send_template_email
 from django.conf import settings
 from django.utils import timezone
+from django.db import transaction
+from django.db.models.functions import Lower
 
 # models.py
 # ✅ Get base URL from settings
 frontend_url = getattr(settings, "FRONTEND_BASE_URL", "http://localhost:5173/")
 home_url = f"{frontend_url.rstrip('/')}/"
+
+
+def create_bace_verification_requests(profile, bace):
+    """Create verification requests for every mentor and the Bace counsellor."""
+    recipients = list(bace.mentors.all())
+    if bace.counsellor and bace.counsellor not in recipients:
+        recipients.append(bace.counsellor)
+
+    # A profile changing Bace starts a fresh verification round.
+    MentorRequest.objects.filter(
+        from_user=profile,
+        is_approved=False,
+        is_rejected=False,
+    ).exclude(requested_bace=bace).update(
+        is_rejected=True,
+        rejected_at=timezone.now(),
+    )
+
+    for recipient in recipients:
+        if recipient == profile:
+            continue
+        request_obj, _ = MentorRequest.objects.get_or_create(
+            from_user=profile,
+            to_mentor=recipient,
+            requested_bace=bace,
+            defaults={"is_approved": False, "is_rejected": False},
+        )
+        if request_obj.is_rejected and not request_obj.is_approved:
+            request_obj.is_rejected = False
+            request_obj.rejected_at = None
+            request_obj.rejected_by = None
+            request_obj.save(update_fields=["is_rejected", "rejected_at", "rejected_by"])
+
+
+class BaceListView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        baces = Bace.objects.filter(is_active=True).select_related("counsellor").prefetch_related("mentors")
+        return Response(BaceSerializer(baces, many=True, context={"request": request}).data)
 
 
 
@@ -39,10 +81,41 @@ class ProfileView(APIView):
         """Create or update profile; handle mentor requests automatically"""
         profile, created = Profile.objects.get_or_create(user=request.user)
         old_mentor = profile.mentor
+        requested_center = request.data.get("center", profile.center)
+
+        # The frontend may show a broader list than the Baces configured in
+        # admin. Anything not configured is grouped under the mandatory
+        # fallback Bace named "Others".
+        requested_bace = Bace.objects.filter(
+            name=requested_center, is_active=True
+        ).first() if requested_center else None
+        if requested_center and not requested_bace:
+            requested_bace = Bace.objects.filter(name="Others", is_active=True).first()
+            if not requested_bace:
+                return Response(
+                    {"center": "The fallback Bace 'Others' is not configured."},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+            requested_center = requested_bace.name
+
+        current_bace = Bace.objects.filter(name=profile.center, is_active=True).first()
+        current_center = current_bace.name if current_bace else ("Others" if profile.center else "")
+
+        if (
+            profile.profile_verification_status == "verified"
+            and requested_center != current_center
+        ):
+            return Response(
+                {"center": "A verified profile cannot change its Bace."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        bace = requested_bace
      
 
         # ✅ Handle mentor change (by member_id)
-        new_mentor_member_id = request.data.get('mentor')
+        # Mentors are assigned only through the Bace admin mapping; users cannot choose one.
+        new_mentor_member_id = None
 
         if new_mentor_member_id:
             try:
@@ -84,13 +157,28 @@ class ProfileView(APIView):
                         fail_silently=True,
                     )
 
-        serializer = ProfileSerializer(profile, data=request.data, partial=True, context={'request': request})
+        profile_data = request.data.copy()
+        if requested_center:
+            profile_data["center"] = requested_center
+        serializer = ProfileSerializer(profile, data=profile_data, partial=True, context={'request': request})
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         updated_profile = serializer.save()
 
-        return Response(serializer.data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+        if requested_center and updated_profile.profile_verification_status != "verified":
+            updated_profile.profile_verification_status = "pending"
+            updated_profile.user_type = "guest"
+            updated_profile.mentor = None
+            updated_profile.save(update_fields=[
+                "profile_verification_status",
+                "user_type",
+                "mentor",
+            ])
+            create_bace_verification_requests(updated_profile, bace)
+
+        response_serializer = ProfileSerializer(updated_profile, context={'request': request})
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
         
 class ProfilePictureUploadView(APIView):
@@ -145,8 +233,12 @@ class MentorRequestView(APIView):
         # =================================================================
         approved_requests = MentorRequest.objects.filter(
             to_mentor=mentor_profile,
-            is_approved=True
-        ).select_related('from_user__user')
+            is_approved=True,
+        ).select_related('from_user__user').order_by(
+            Lower('from_user__first_name'),
+            Lower('from_user__last_name'),
+            'from_user_id',
+        )
 
         approved_mentees_data = [
             ProfileFastSerializer(req.from_user, context={'request': request}).data
@@ -158,8 +250,13 @@ class MentorRequestView(APIView):
         # =================================================================
         pending_requests = MentorRequest.objects.filter(
             to_mentor=mentor_profile,
-            is_approved=False
-        ).select_related('from_user__user')
+            is_approved=False,
+            is_rejected=False,
+        ).select_related('from_user__user').order_by(
+            Lower('from_user__first_name'),
+            Lower('from_user__last_name'),
+            'from_user_id',
+        )
 
         pending_requests_data = [
             {
@@ -167,6 +264,7 @@ class MentorRequestView(APIView):
                 "from_user": ProfileFastSerializer(req.from_user, context={'request': request}).data,
                 "message": req.message,
                 "created_at": req.created_at,
+                "bace": req.requested_bace.name if req.requested_bace else req.from_user.center,
             }
             for req in pending_requests
         ]
@@ -198,17 +296,44 @@ class MentorRequestView(APIView):
         request_id = request.data.get('request_id')
         mentor_profile = request.user.profile
         print(request_id,'printing req id ...................................')
-        req = get_object_or_404(MentorRequest, id=request_id, to_mentor=mentor_profile)
+        req = get_object_or_404(
+            MentorRequest,
+            id=request_id,
+            to_mentor=mentor_profile,
+            is_approved=False,
+            is_rejected=False,
+        )
 
+        with transaction.atomic():
+            if req.requested_bace and not req.requested_bace.counsellor:
+                return Response(
+                    {"detail": "This Bace does not have a counsellor assigned yet."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
-        req.is_approved = True
-        req.save()
+            req.is_approved = True
+            req.save(update_fields=["is_approved"])
 
-        # Assign mentee officially
-        mentee = req.from_user
-        mentee.mentor = mentor_profile
-        mentee.user_type = 'devotee'  # Update user_type to 'devotee'
-        mentee.save()
+            mentee = req.from_user
+            counsellor = req.requested_bace.counsellor if req.requested_bace else mentor_profile
+            mentee.mentor = counsellor
+            mentee.user_type = 'devotee'
+            mentee.profile_verification_status = 'verified'
+            mentee.save(update_fields=[
+                'mentor', 'user_type', 'profile_verification_status',
+            ])
+
+            # One approval closes the other requests for the same Bace.
+            MentorRequest.objects.filter(
+                from_user=mentee,
+                requested_bace=req.requested_bace,
+                is_approved=False,
+                is_rejected=False,
+            ).exclude(pk=req.pk).update(
+                is_rejected=True,
+                rejected_at=timezone.now(),
+                rejected_by=mentor_profile,
+            )
 
         # mentee_email = mentee.user.email
         # if mentee_email:
@@ -243,17 +368,29 @@ class MentorRequestView(APIView):
             return Response({"error": "Request not found or already processed"}, status=status.HTTP_404_NOT_FOUND)
 
         mentee = req.from_user
-        mentee_email = mentee.user.email
+        mentee = req.from_user
+        req.is_rejected = True
+        req.rejected_at = timezone.now()
+        req.rejected_by = mentor_profile
+        req.save(update_fields=["is_rejected", "rejected_at", "rejected_by"])
 
-        # 2. Clear the mentor reference from the mentee's Profile
-        # -----------------------------------------------------------------
-        if mentee.mentor == mentor_profile:
-            mentee.mentor = None
-            mentee.user_type = 'guest'  # Revert user_type to 'seeker'
-            mentee.save(update_fields=["mentor", "user_type"])
-
-        # Delete request
-        req.delete()
+        # Rejection is final for this Bace round. The user can choose another Bace.
+        MentorRequest.objects.filter(
+            from_user=mentee,
+            requested_bace=req.requested_bace,
+            is_approved=False,
+            is_rejected=False,
+        ).exclude(pk=req.pk).update(
+            is_rejected=True,
+            rejected_at=timezone.now(),
+            rejected_by=mentor_profile,
+        )
+        mentee.mentor = None
+        mentee.user_type = 'guest'
+        mentee.profile_verification_status = 'rejected'
+        mentee.save(update_fields=[
+            "mentor", "user_type", "profile_verification_status",
+        ])
 
         # if mentee_email:
         #     send_template_email(

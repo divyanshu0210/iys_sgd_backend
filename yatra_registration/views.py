@@ -17,7 +17,7 @@ from .models import YatraRegistration
 from django.db.models import (
     F, Value, CharField, OuterRef, Exists
 )
-from django.db.models.functions import Concat
+from django.db.models.functions import Concat, Lower
 from uuid import UUID
 from django.contrib.admin.views.decorators import staff_member_required
 from django.utils.decorators import method_decorator
@@ -119,11 +119,19 @@ class YatraEligibilityView(APIView):
             Profile.objects
             .filter(id__in=profile_ids)
             .select_related('user', 'mentor')
+            .order_by(Lower('first_name'), Lower('last_name'), 'id')
         )
 
-        # Preserve original order (mentees first, self last)
-        profile_order = {pid: idx for idx, pid in enumerate(profile_ids)}
-        profiles = sorted(profiles_qs, key=lambda p: profile_order[p.id])
+        # Return profiles alphabetically, with the logged-in user's profile last.
+        profiles = sorted(
+            profiles_qs,
+            key=lambda profile: (
+                profile.id == mentor.id,
+                (profile.first_name or "").lower(),
+                (profile.last_name or "").lower(),
+                str(profile.id),
+            ),
+        )
 
         # =====================================================
         # 3. FETCH ELIGIBILITY (MINIMAL)
@@ -418,6 +426,7 @@ class YatraRegistrationView(APIView):
                     Profile.objects
                     .filter(id__in=profile_ids)
                     .select_related('user', 'mentor')
+                    .order_by(Lower('first_name'), Lower('last_name'), 'id')
                     .annotate(
                         full_name=Concat(
                             F('first_name'),

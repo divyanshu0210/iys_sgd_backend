@@ -43,8 +43,21 @@ class Profile(models.Model):
         ('guest', 'Guest'),
         ('devotee', 'Devotee'),
         ('mentor', 'Mentor'),   # ✅ New user type added
+        ('counsellor', 'Counsellor'),
     ]
     user_type = models.CharField(max_length=20, choices=USER_TYPE_CHOICES, default='guest')
+
+    PROFILE_STATUS_CHOICES = [
+        ('incomplete', 'Incomplete'),
+        ('pending', 'Pending Verification'),
+        ('verified', 'Verified'),
+        ('rejected', 'Rejected'),
+    ]
+    profile_verification_status = models.CharField(
+        max_length=20,
+        choices=PROFILE_STATUS_CHOICES,
+        default='incomplete',
+    )
 
     # Basic Details
     username = models.CharField(max_length=100, blank=True, null=True)
@@ -127,6 +140,16 @@ class MentorRequest(models.Model):
     to_mentor = models.ForeignKey('Profile', related_name='received_requests', on_delete=models.CASCADE)
     message = models.TextField(blank=True, null=True)
     is_approved = models.BooleanField(default=False)
+    is_rejected = models.BooleanField(default=False)
+    requested_bace = models.ForeignKey(
+        'Bace', null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='mentor_requests'
+    )
+    rejected_at = models.DateTimeField(null=True, blank=True)
+    rejected_by = models.ForeignKey(
+        'Profile', null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='rejected_mentor_requests'
+    )
     approved_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -145,5 +168,25 @@ class MentorRequest(models.Model):
         if self.is_approved and self.approved_at is None:
             self.approved_at = timezone.now()
         super().save(*args, **kwargs)
+
+
+class Bace(models.Model):
+    name = models.CharField(max_length=150, unique=True)
+    is_active = models.BooleanField(default=True)
+    counsellor = models.ForeignKey(
+        Profile,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='counselled_baces',
+    )
+    mentors = models.ManyToManyField(
+        Profile,
+        blank=True,
+        related_name='mentor_baces',
+    )
+
+    def __str__(self):
+        return self.name
     
 

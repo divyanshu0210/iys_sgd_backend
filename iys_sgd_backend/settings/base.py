@@ -123,25 +123,40 @@ DATA_UPLOAD_MAX_NUMBER_FIELDS = 10000
 
 # WSGI_APPLICATION = 'iys_sgd_backend.wsgi.application'
 DB_CONN_MAX_AGE = config("DB_CONN_MAX_AGE", default=300, cast=int)
-if IS_DEBUG:
-    # Use LOCAL SQLite or local MySQL (Whichever you want)
+DB_SSL_REQUIRE = config("DB_SSL_REQUIRE", default=True, cast=bool)
+DATABASE_URL = config("DATABASE_URL", default=None)
+LOCAL_DATABASE_URL = config("LOCAL_DATABASE_URL", default=None)
+
+if DEBUG and LOCAL_DATABASE_URL:
+    # Local development can use PostgreSQL without changing the production URL.
+    DATABASES = {
+        "default": dj_database_url.config(
+            default=LOCAL_DATABASE_URL,
+            conn_max_age=DB_CONN_MAX_AGE,
+            conn_health_checks=True,
+            ssl_require=False,
+        )
+    }
+elif DEBUG:
+    # Fall back to SQLite when no local PostgreSQL URL is configured.
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
             "NAME": BASE_DIR / "db.sqlite3",
         }
     }
-else:
-    # Use Railway MySQL in production
-    DATABASE_URL = config("DATABASE_URL", default=None)
+elif DATABASE_URL:
+    # Production uses the existing DATABASE_URL, normally Supabase.
     DATABASES = {
         "default": dj_database_url.config(
             default=DATABASE_URL,
             conn_max_age=DB_CONN_MAX_AGE,
             conn_health_checks=True,
-            ssl_require=True
+            ssl_require=DB_SSL_REQUIRE
         )
-        }
+    }
+else:
+    raise RuntimeError("DATABASE_URL must be configured when DEBUG=False")
 
 
 # Password validation

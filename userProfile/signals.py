@@ -146,9 +146,18 @@ def update_mentee_on_approval(sender, instance, **kwargs):
                 year=f"{approval_year:02d}",
                 center_code=center_code
             )
-            mentee.mentor = instance.to_mentor
+            assigned_counsellor = (
+                instance.requested_bace.counsellor
+                if instance.requested_bace and instance.requested_bace.counsellor
+                else instance.to_mentor
+            )
+            mentee.mentor = assigned_counsellor
             mentee.user_type = "devotee"
-            mentee.save(update_fields=["member_id", "mentor", "user_type"])
+            mentee.profile_verification_status = "verified"
+            mentee.save(update_fields=[
+                "member_id", "mentor", "user_type",
+                "profile_verification_status",
+            ])
 
     # ✅ Explicit unapproval (True → False)
     elif previous.is_approved and not instance.is_approved:
@@ -159,4 +168,8 @@ def update_mentee_on_approval(sender, instance, **kwargs):
             )
             mentee.mentor = None
             mentee.user_type = "guest"
-            mentee.save(update_fields=["member_id", "mentor", "user_type"])
+            mentee.profile_verification_status = "pending"
+            mentee.save(update_fields=[
+                "member_id", "mentor", "user_type",
+                "profile_verification_status",
+            ])

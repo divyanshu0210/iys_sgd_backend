@@ -31,6 +31,7 @@ class ProfileSerializer(serializers.ModelSerializer):
     profile_approved_at = serializers.SerializerMethodField()
     mentor = MentorField(required=False, allow_null=True)  # ✅ use our custom field
     mentor_name = serializers.SerializerMethodField()
+    counsellor_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Profile
@@ -63,12 +64,20 @@ class ProfileSerializer(serializers.ModelSerializer):
             'emergency_contact',
             'mentor',
             'mentor_name',
+            'counsellor_name',
             'profile_picture',
             'profile_picture_url',
             'no_of_chanting_rounds',
             'created_at',
             'is_profile_approved',
             'profile_approved_at',
+            'profile_verification_status',
+        ]
+        read_only_fields = [
+            'member_id',
+            'user_type',
+            'mentor',
+            'profile_verification_status',
         ]
 
     def get_full_name(self, obj):
@@ -78,6 +87,15 @@ class ProfileSerializer(serializers.ModelSerializer):
         if obj.mentor:
             return f"{obj.mentor.first_name} {obj.mentor.last_name}".strip()
         return None
+
+    def get_counsellor_name(self, obj):
+        counsellor = None
+        if obj.mentor and obj.mentor.user_type == 'counsellor':
+            counsellor = obj.mentor
+        elif obj.center:
+            bace = Bace.objects.filter(name=obj.center, is_active=True).select_related('counsellor').first()
+            counsellor = bace.counsellor if bace else None
+        return counsellor.full_name() if counsellor else None
 
     def get_profile_picture_url(self, obj):
         request = self.context.get('request')
@@ -91,7 +109,9 @@ class ProfileSerializer(serializers.ModelSerializer):
     def get_is_profile_approved(self, obj):
         try:
             return (
+                obj.profile_verification_status == 'verified' or
                 obj.user_type == 'mentor' or
+                obj.user_type == 'counsellor' or
                 obj.received_requests.filter(is_approved=True).exists()
                 or obj.sent_requests.filter(is_approved=True).exists()
             )
@@ -116,6 +136,21 @@ class ProfileSerializer(serializers.ModelSerializer):
         # Pick the most recent approval
         req = received or sent
         return req.approved_at if req else None
+
+
+class BaceSerializer(serializers.ModelSerializer):
+    counsellor_name = serializers.SerializerMethodField()
+    mentor_ids = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Bace
+        fields = ['id', 'name', 'is_active', 'counsellor', 'counsellor_name', 'mentor_ids']
+
+    def get_counsellor_name(self, obj):
+        return obj.counsellor.full_name() if obj.counsellor else None
+
+    def get_mentor_ids(self, obj):
+        return list(obj.mentors.values_list('id', flat=True))
 
 
 
@@ -146,6 +181,7 @@ class ProfileFastSerializer(serializers.ModelSerializer):
             'initiated_name',
             'no_of_chanting_rounds',
             'profile_picture',
+            'profile_verification_status',
         ]
 
 
