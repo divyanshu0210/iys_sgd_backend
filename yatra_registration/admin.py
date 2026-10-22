@@ -12,6 +12,7 @@ from django.urls import reverse
 from django.utils.html import format_html
 from django.db.models import Prefetch
 from django.contrib.admin import SimpleListFilter
+from yatra.admin_utils import ActiveYatraAdminMixin
 
 class YatraListFilter(SimpleListFilter):
     title = 'Yatra'
@@ -130,7 +131,8 @@ def custom_field_name(self, instance):
     return "-"
 
 @admin.register(YatraEligibility)
-class YatraEligibilityAdmin(admin.ModelAdmin):
+class YatraEligibilityAdmin(ActiveYatraAdminMixin, admin.ModelAdmin):
+    change_list_template = "admin/active_yatra_changelist.html"
     list_display = ('yatra', 'profile', 'approved_by', 'is_approved', 'approved_at')
     list_filter = ('is_approved', 'yatra','yatra__title', 'approved_at')
     search_fields = ('profile__first_name', 'profile__last_name', 'yatra__title')
@@ -157,13 +159,14 @@ class RegistrationJourneyInline(admin.TabularInline):
     # extra = 0
 
 @admin.register(YatraRegistration)
-class YatraRegistrationAdmin(admin.ModelAdmin):
+class YatraRegistrationAdmin(ActiveYatraAdminMixin, admin.ModelAdmin):
     list_display = (
         'registered_for',
         'yatra',
         'registered_by',
         'mentor_full_name',
         'registration_status',
+        'registration_phase',
         'total_amount_display',
         'paid_amount_display',
         'installments_status',
@@ -179,6 +182,7 @@ class YatraRegistrationAdmin(admin.ModelAdmin):
         'registered_for__last_name',
         'registered_by__first_name',
         'registered_by__last_name',
+        'phase__name',
     )
     list_filter = (
         YatraListFilter,'status', 'registered_at',RCSDownloadedFilter,)
@@ -194,6 +198,10 @@ class YatraRegistrationAdmin(admin.ModelAdmin):
         RegistrationCustomFieldValueInline
     ]
     actions = [export_as_excel]
+
+    @admin.display(description="Phase", ordering='phase__name')
+    def registration_phase(self, obj):
+        return obj.phase.name if obj.phase_id else "Legacy / No phase"
 
     @admin.display(description="Status", ordering='status')
     def registration_status(self, obj):
@@ -286,7 +294,9 @@ class YatraRegistrationAdmin(admin.ModelAdmin):
         extra_context = extra_context or {}
         extra_context['yatra'] = yatra
 
-        return super().changelist_view(request, extra_context=extra_context)
+        return ActiveYatraAdminMixin.changelist_view(
+            self, request, extra_context=extra_context
+        )
 #──────────────────────────────────────────────────────────────
 #other amount and installment methods
     # Clean display methods (no colors, no HTML)
@@ -470,7 +480,9 @@ class YatraRegistrationAdmin(admin.ModelAdmin):
         return True  # Still show in admin menu
 
     def get_queryset(self, request):
-        qs = super().get_queryset(request)
+        # Apply the active/all Yatra toggle before adding the admin
+        # select_related/prefetch_related optimizations below.
+        qs = ActiveYatraAdminMixin.get_queryset(self, request)
 
         return qs.select_related(
             'yatra',

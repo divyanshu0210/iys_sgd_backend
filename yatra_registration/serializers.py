@@ -52,6 +52,8 @@ class YatraRegistrationSerializer(serializers.ModelSerializer):
 class InstallmentSerializer(serializers.ModelSerializer):
     label = serializers.CharField(source='installment.label', read_only=True)
     amount = serializers.DecimalField(source='installment.amount', max_digits=10, decimal_places=2, read_only=True)
+    order = serializers.IntegerField(source='installment.order', read_only=True)
+    start_date = serializers.DateField(source='installment.start_date', read_only=True)
     payment = PaymentSerializer(read_only=True)
 
     class Meta:
@@ -60,6 +62,8 @@ class InstallmentSerializer(serializers.ModelSerializer):
             'id',
             'label',
             'amount',
+            'order',
+            'start_date',
             'is_paid',
             'paid_at',
             'verified_by',
@@ -68,10 +72,17 @@ class InstallmentSerializer(serializers.ModelSerializer):
             'payment',
         ]
 
+
+class RegistrationPhaseSummarySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RegistrationPhase
+        fields = ['id', 'name', 'start_date', 'end_date']
+
 class YatraRegistrationDetailSerializer(serializers.ModelSerializer):
     registered_for = serializers.StringRelatedField()
     yatra = serializers.StringRelatedField()
     installments = InstallmentSerializer(many=True, read_only=True)
+    phase = RegistrationPhaseSummarySerializer(read_only=True)
 
     class Meta:
         model = YatraRegistration
@@ -84,6 +95,7 @@ class YatraRegistrationDetailSerializer(serializers.ModelSerializer):
             'registered_at',
             'updated_at',
             'installments',
+            'phase',
         ]
 
 

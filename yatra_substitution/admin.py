@@ -1,8 +1,11 @@
 from django.contrib import admin
 from .models import SubstitutionRequest
+from yatra.admin_utils import ActiveYatraAdminMixin
 
 @admin.register(SubstitutionRequest)
-class SubstitutionRequestAdmin(admin.ModelAdmin):
+class SubstitutionRequestAdmin(ActiveYatraAdminMixin, admin.ModelAdmin):
+    admin_yatra_lookup = "registration__yatra"
+    change_list_template = "admin/yatra_substitution/substitutionrequest_changelist.html"
     list_display = (
         "id",
         "registration",

@@ -78,3 +78,45 @@ class YatraImportantNoteForm(forms.ModelForm):
                 "placeholder": "Enter point-wise note"
             })
         }
+
+
+class PhaseInstallmentForm(forms.ModelForm):
+    """Keep the first phase installment date tied to the phase start date."""
+
+    class Meta:
+        model = YatraInstallment
+        fields = ['label', 'amount', 'order', 'start_date']
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        if self.instance.phase_id:
+            first = (
+                YatraInstallment.objects
+                .filter(phase_id=self.instance.phase_id)
+                .order_by('order', 'id')
+                .first()
+            )
+            is_first_existing = first and first.pk == self.instance.pk
+            is_first_new = not self.instance.pk and first is None
+            if is_first_existing or is_first_new:
+                self.fields['start_date'].disabled = True
+                self.initial['start_date'] = self.instance.phase.start_date
+
+    def clean(self):
+        cleaned = super().clean()
+        phase = self.instance.phase if self.instance.phase_id else None
+        if not phase:
+            return cleaned
+
+        other = (
+            YatraInstallment.objects
+            .filter(phase_id=phase.id)
+            .exclude(pk=self.instance.pk)
+            .order_by('order', 'id')
+            .first()
+        )
+        order = cleaned.get('order', self.instance.order)
+        if other is None or order <= other.order:
+            cleaned['start_date'] = phase.start_date
+        return cleaned

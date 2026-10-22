@@ -15,12 +15,64 @@ from userProfile.models import *
 from payment.models import *
 from .models import YatraRegistration
 from django.db.models import (
-    F, Value, CharField, OuterRef, Exists
+    F, Value, CharField, OuterRef, Exists, Q
 )
 from django.db.models.functions import Concat, Lower
+from django.utils import timezone
 from uuid import UUID
 from django.contrib.admin.views.decorators import staff_member_required
 from django.utils.decorators import method_decorator
+
+
+def active_registration_phase(yatra, on_date=None):
+    """Return the most recently started phase active on the given date."""
+    on_date = on_date or timezone.localdate()
+    return (
+        yatra.registration_phases
+        .filter(start_date__lte=on_date)
+        .filter(Q(end_date__isnull=True) | Q(end_date__gte=on_date))
+        .order_by("-start_date", "-id")
+        .first()
+    )
+
+
+def phase_for_registration(yatra, registration=None):
+    """Keep an existing registration on its original phase forever."""
+    if registration and registration.phase_id:
+        has_phase_installment = registration.installments.filter(
+            installment__phase_id=registration.phase_id
+        ).exists()
+        if has_phase_installment:
+            return registration.phase
+
+        # A registration row without a phase installment has not actually
+        # started that phase. It may move to the currently active phase.
+        return active_registration_phase(yatra)
+
+    if registration:
+        existing_phase = (
+            registration.installments
+            .filter(installment__phase__isnull=False)
+            .select_related("installment__phase")
+            .first()
+        )
+        if existing_phase:
+            return existing_phase.installment.phase
+
+        # Legacy registrations without phase-specific installments stay on
+        # the legacy installment set instead of moving into a new phase.
+        return None
+
+    return active_registration_phase(yatra)
+
+
+def installments_for_phase(yatra, phase=None):
+    queryset = phase.installments if phase else yatra.installments.filter(phase__isnull=True)
+    return list(queryset.all())
+
+
+def phase_payload(phase):
+    return RegistrationPhaseSummarySerializer(phase).data if phase else None
 
 
 
@@ -472,7 +524,7 @@ class YatraRegistrationView(APIView):
                 registrations = (
                     YatraRegistration.objects
                     .filter(yatra=yatra, registered_for_id__in=profile_ids)
-                    .select_related('registered_for')
+                    .select_related('registered_for', 'phase')
                     .prefetch_related(
                         'installments__installment',
                         'installments__payment',
@@ -486,9 +538,9 @@ class YatraRegistrationView(APIView):
                 print("STEP 8: registrations COUNT =", registrations.count())
 
                 registration_map = {r.registered_for_id: r for r in registrations}
-                yatra_installments = list(yatra.installments.all())
+                legacy_installments = installments_for_phase(yatra)
 
-                print("STEP 9: yatra_installments", [i.label for i in yatra_installments])
+                print("STEP 9: legacy_installments", [i.label for i in legacy_installments])
 
                 # =====================================================
                 # SUBSTITUTION REQUESTS (BULK)
@@ -517,10 +569,13 @@ class YatraRegistrationView(APIView):
 
                     eligibility = eligibility_map.get(pid)
                     registration = registration_map.get(pid)
+                    registration_phase = phase_for_registration(yatra, registration)
+                    profile_installments = installments_for_phase(yatra, registration_phase)
 
                     pdata.update({
                         'is_eligible': True if not requires_approval else (eligibility.is_approved if eligibility else False),
                         'is_self': pid == user_profile.id,
+                        'registration_phase': phase_payload(registration_phase),
                         'approved_by': (
                             str(eligibility.approved_by.member_id)
                             if eligibility and eligibility.approved_by else None
@@ -537,12 +592,12 @@ class YatraRegistrationView(APIView):
                         for inst in reg_installments:
                             (paid if inst.is_paid else pending).append(inst.installment.label)
 
-                        for inst in yatra_installments:
+                        for inst in profile_installments:
                             if inst.label not in paid and inst.label not in pending:
                                 pending.append(inst.label)
 
                         installments_info = []
-                        for inst in yatra_installments:
+                        for inst in profile_installments:
                             ri = inst_map.get(inst.id)
                             if ri:
                                 if ri.is_paid:
@@ -559,6 +614,8 @@ class YatraRegistrationView(APIView):
                             installments_info.append({
                                 "label": inst.label,
                                 "amount": float(inst.amount),
+                                "order": inst.order,
+                                "start_date": inst.start_date,
                                 "tag": tag,
                             })
 
@@ -623,12 +680,18 @@ class YatraRegistrationView(APIView):
                             'registration_status': "pending",
                             'form_data': {},
                             'paid_amount': 0,
-                            'pending_amount': float(sum(i.amount for i in yatra_installments)),
+                            'pending_amount': float(sum(i.amount for i in profile_installments)),
                             'installments_paid': [],
-                            'installments_pending': [i.label for i in yatra_installments],
+                            'installments_pending': [i.label for i in profile_installments],
                             'installments_info': [
-                                {'label': i.label, 'amount': float(i.amount), 'tag': 'due'}
-                                for i in yatra_installments
+                                {
+                                    'label': i.label,
+                                    'amount': float(i.amount),
+                                    'order': i.order,
+                                    'start_date': i.start_date,
+                                    'tag': 'due',
+                                }
+                                for i in profile_installments
                             ],
                             'accommodation': [],
                             'journey': [],
@@ -677,6 +740,7 @@ class YatraRegistrationView(APIView):
 
         created_or_updated = []
         errors = []
+        today = timezone.localdate()
 
         for profile_id, reg_data in registrations_data.items():
             try:
@@ -684,6 +748,31 @@ class YatraRegistrationView(APIView):
             except Profile.DoesNotExist:
                 errors.append(f'Invalid profile ID: {profile_id}')
                 continue
+
+            existing_registration = (
+                YatraRegistration.objects
+                .filter(yatra=yatra, registered_for=profile)
+                .select_related('phase')
+                .first()
+            )
+            registration_phase = phase_for_registration(yatra, existing_registration)
+            if existing_registration is None:
+                registration_phase = active_registration_phase(yatra)
+
+            if (
+                existing_registration
+                and registration_phase
+                and registration_phase.end_date
+                and registration_phase.end_date < today
+                and existing_registration.installments.filter(is_paid=False).exists()
+            ):
+                errors.append(
+                    f'Registration has closed for {profile}; pending installments cannot be updated.'
+                )
+                continue
+
+            phase_installments = installments_for_phase(yatra, registration_phase)
+            valid_installments = {installment.label: installment for installment in phase_installments}
 
             # --- Eligibility check (skipped when requires_approval=False) ---
             if requires_approval and not self._check_eligibility(yatra, profile, registrant):
@@ -695,12 +784,69 @@ class YatraRegistrationView(APIView):
             installments_selected = reg_data.get('installments_selected', [])
             installments_details = reg_data.get('installments_details', [])
 
+            invalid_phase_installments = [
+                label for label in installments_selected if label not in valid_installments
+            ]
+            if invalid_phase_installments:
+                errors.append(
+                    f'Invalid installment(s) for the selected registration phase: '
+                    f'{", ".join(invalid_phase_installments)}'
+                )
+                continue
+
+            existing_labels = set()
+            if existing_registration:
+                existing_labels = set(
+                    existing_registration.installments.values_list(
+                        'installment__label', flat=True
+                    )
+                )
+
+            selected_labels = set(installments_selected)
+            missing_order = []
+            for index, installment in enumerate(phase_installments):
+                if installment.label not in selected_labels:
+                    continue
+                missing_prerequisites = [
+                    previous.label
+                    for previous in phase_installments[:index]
+                    if previous.label not in existing_labels
+                    and previous.label not in selected_labels
+                ]
+                if missing_prerequisites:
+                    missing_order.extend(missing_prerequisites)
+            if missing_order:
+                errors.append(
+                    'Installments must be selected in order. Please select: '
+                    f'{", ".join(dict.fromkeys(missing_order))}'
+                )
+                continue
+
+            mandatory_indexes = [
+                index
+                for index, installment in enumerate(phase_installments)
+                if installment.start_date and installment.start_date <= today
+            ]
+            required_labels = set()
+            if mandatory_indexes:
+                required_labels.update(
+                    installment.label
+                    for installment in phase_installments[: max(mandatory_indexes) + 1]
+                )
+            missing_required = sorted(required_labels - existing_labels - set(installments_selected))
+            if missing_required:
+                errors.append(
+                    f'The following installments are mandatory: {", ".join(missing_required)}'
+                )
+                continue
+
             # --- Create or update registration ---
             registration, created_flag = YatraRegistration.objects.get_or_create(
                 yatra=yatra,
                 registered_for=profile,
                 defaults={
                     'registered_by': registrant,
+                    'phase': registration_phase,
                     'form_data': form_fields,
                     'status': 'partial' if installments_selected else 'pending',
                 }
@@ -708,6 +854,8 @@ class YatraRegistrationView(APIView):
 
             if not created_flag:
                 registration.form_data = form_fields
+                if registration.phase_id != getattr(registration_phase, 'id', None):
+                    registration.phase = registration_phase
                 registration.save()
 
             # --- Handle installments ---
@@ -717,8 +865,13 @@ class YatraRegistrationView(APIView):
 
             for inst_label in installments_selected:
                 try:
-                    installment = YatraInstallment.objects.get(yatra=yatra, label=inst_label)
+                    # Use the phase-scoped map validated above. Labels may
+                    # legitimately repeat between different phases.
+                    installment = valid_installments[inst_label]
                 except YatraInstallment.DoesNotExist:
+                    errors.append(f'Invalid installment "{inst_label}" for profile {profile}')
+                    continue
+                except KeyError:
                     errors.append(f'Invalid installment "{inst_label}" for profile {profile}')
                     continue
 
@@ -880,7 +1033,8 @@ class YatraRegistrationDetailView(APIView):
         except YatraRegistration.DoesNotExist:
             # User not registered yet — return blank structure
             yatra = get_object_or_404(Yatra, id=yatra_id)
-            installments = yatra.installments.all()
+            phase = active_registration_phase(yatra)
+            installments = installments_for_phase(yatra, phase)
             installments_data = InstallmentSerializer(installments, many=True, context={'blank_mode': True}).data
 
             blank_data = {
@@ -891,11 +1045,14 @@ class YatraRegistrationDetailView(APIView):
                 "status": "not_registered",
                 "registered_at": None,
                 "updated_at": None,
+                "phase": phase_payload(phase),
                 "installments": [
                     {
                         "id": None,
                         "label": inst.label,
                         "amount": inst.amount,
+                        "order": inst.order,
+                        "start_date": inst.start_date,
                         "is_paid": False,
                         "paid_at": None,
                         "verified_by": None,

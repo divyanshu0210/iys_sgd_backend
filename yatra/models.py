@@ -26,10 +26,6 @@ class Yatra(models.Model):
         blank=True, null=True,
         help_text="Date after which refund for cancellations will be made."
     )
-    accept_full_payment_only_date = models.DateField(       # ✅ NEW
-        blank=True, null=True,
-        help_text="After this date, partial installment payment is not allowed for new registrations."
-    )
     poster = models.ImageField(
         upload_to="yatra/posters/",
         blank=True,
@@ -56,6 +52,30 @@ class RegistrationPolicy(models.Model):
 
     def __str__(self):
         return f"Policy → {self.yatra.title}"
+
+
+class RegistrationPhase(models.Model):
+    yatra = models.ForeignKey(
+        Yatra, on_delete=models.CASCADE, related_name="registration_phases"
+    )
+    name = models.CharField(max_length=150)
+    start_date = models.DateField()
+    end_date = models.DateField(blank=True, null=True)
+
+    class Meta:
+        ordering = ["start_date", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["yatra", "name"], name="unique_yatra_registration_phase_name"
+            )
+        ]
+
+    def clean(self):
+        if self.end_date and self.end_date < self.start_date:
+            raise ValidationError("Phase end date cannot be before its start date.")
+
+    def __str__(self):
+        return f"{self.yatra.title} → {self.name}"
 
 
 class YatraFormField(models.Model):
@@ -95,13 +115,50 @@ class YatraFormField(models.Model):
 # === 2. Payment Installment Options ===
 class YatraInstallment(models.Model):
     yatra = models.ForeignKey(Yatra, on_delete=models.CASCADE, related_name='installments')
+    phase = models.ForeignKey(
+        RegistrationPhase,
+        on_delete=models.CASCADE,
+        related_name='installments',
+        blank=True,
+        null=True,
+    )
     label = models.CharField(max_length=100, help_text="e.g., Full Payment (₹6500)")
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     order = models.PositiveIntegerField(default=0)
+    start_date = models.DateField(
+        blank=True,
+        null=True,
+        help_text="After this date, this installment becomes compulsory for this phase.",
+    )
 
     class Meta:
         ordering = ['order', 'id']
-        unique_together = ('yatra', 'label')
+        constraints = [
+            models.UniqueConstraint(
+                fields=['yatra', 'phase', 'label'],
+                name='unique_yatra_phase_installment_label',
+            )
+        ]
+
+    def save(self, *args, **kwargs):
+        # Phase installments are entered inside a nested Yatra admin form.
+        # The inline supplies ``phase`` but does not expose the parent Yatra
+        # field, so keep the two relationships synchronized automatically.
+        if self.phase_id:
+            self.yatra_id = self.phase.yatra_id
+
+            # The earliest installment in a phase always starts with the
+            # phase. This prevents its date from drifting independently.
+            earlier_installment = (
+                YatraInstallment.objects
+                .filter(phase_id=self.phase_id)
+                .exclude(pk=self.pk)
+                .order_by('order', 'id')
+                .first()
+            )
+            if earlier_installment is None or self.order <= earlier_installment.order:
+                self.start_date = self.phase.start_date
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.yatra.title} → {self.label} (₹{self.amount})"

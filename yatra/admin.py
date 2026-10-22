@@ -21,7 +21,27 @@ class YatraFormFieldInline(nested_admin.NestedTabularInline):
 class YatraInstallmentInline(nested_admin.NestedTabularInline):
     model = YatraInstallment
     extra = 1
-    fields = ['label', 'amount', 'order']
+    fields = ['label', 'amount', 'order', 'start_date']
+    verbose_name = "Legacy installment (no phase)"
+    verbose_name_plural = "Legacy installments (no phase)"
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).filter(phase__isnull=True)
+
+
+class PhaseInstallmentInline(nested_admin.NestedTabularInline):
+    model = YatraInstallment
+    extra = 1
+    fk_name = "phase"
+    fields = ['label', 'amount', 'order', 'start_date']
+    form = PhaseInstallmentForm
+
+
+class RegistrationPhaseInline(nested_admin.NestedStackedInline):
+    model = RegistrationPhase
+    extra = 1
+    fields = ['name', 'start_date', 'end_date']
+    inlines = [PhaseInstallmentInline]
 
 
 class YatraJourneyInline(nested_admin.NestedTabularInline):
@@ -116,9 +136,26 @@ class YatraAdmin(nested_admin.NestedModelAdmin):
     list_filter = ('start_date', 'location')
     ordering = ('-created_at',)
     readonly_fields = ('poster_preview',)
-    inlines = [RegistrationPolicyInline, YatraFormFieldInline, YatraInstallmentInline,
+    inlines = [RegistrationPolicyInline, YatraFormFieldInline, RegistrationPhaseInline,
+               YatraInstallmentInline,
                YatraJourneyInline, YatraAccommodationInline, YatraCustomFieldInline,
                YatraContactCategoryInline, YatraImportantNoteInline,YatraResourceInline]
+
+    def get_inline_instances(self, request, obj=None):
+        inline_instances = super().get_inline_instances(request, obj)
+
+        # nested_admin may still render an empty inline heading even when
+        # has_view_permission() returns False. Remove the legacy inline
+        # instance itself unless this Yatra already has legacy installments.
+        has_legacy_installments = bool(
+            obj and obj.installments.filter(phase__isnull=True).exists()
+        )
+        if not has_legacy_installments:
+            inline_instances = [
+                inline for inline in inline_instances
+                if not isinstance(inline, YatraInstallmentInline)
+            ]
+        return inline_instances
 
     def poster_preview(self, obj):
         if obj.poster:

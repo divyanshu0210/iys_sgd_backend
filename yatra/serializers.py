@@ -15,7 +15,15 @@ class YatraFormFieldSerializer(serializers.ModelSerializer):
 class YatraInstallmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = YatraInstallment
-        fields = ['label', 'amount']
+        fields = ['label', 'amount', 'order', 'start_date']
+
+
+class RegistrationPhaseSerializer(serializers.ModelSerializer):
+    installments = YatraInstallmentSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = RegistrationPhase
+        fields = ['id', 'name', 'start_date', 'end_date', 'installments']
 
 class YatraContactCategorySerializer(serializers.ModelSerializer):
     class Meta:
@@ -36,7 +44,8 @@ class RegistrationPolicySerializer(serializers.ModelSerializer):
 
 class YatraSerializer(serializers.ModelSerializer):
     form_fields = YatraFormFieldSerializer(many=True, read_only=True)
-    installments = YatraInstallmentSerializer(many=True, read_only=True)
+    installments = serializers.SerializerMethodField()
+    registration_phases = RegistrationPhaseSerializer(many=True, read_only=True)
     contact_categories  = YatraContactCategorySerializer(many=True, read_only=True)
     important_notes = YatraImportantNoteSerializer(many=True,read_only=True)
     registration_policy = RegistrationPolicySerializer(read_only=True)
@@ -46,15 +55,21 @@ class YatraSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'title', 'description', 'start_date', 'end_date',
             'location', 'capacity', 'is_registration_open','payment_upi_id',
-            'form_fields', 'installments' , 'substitution_fee', 'cancellation_fee',
+            'form_fields', 'installments', 'registration_phases', 'substitution_fee', 'cancellation_fee',
             'is_rcs_download_open','is_substitution_open','is_cancellation_open',  'close_yatra',
              'payment_refund_date',
-            'accept_full_payment_only_date',
             'contact_categories',
             'important_notes',
             'registration_policy',
             'poster',
         ]
+
+    def get_installments(self, obj):
+        # The top-level list is reserved for pre-phase/legacy installments.
+        # Phase installments are exposed only under their RegistrationPhase,
+        # preventing consumers from accidentally mixing phases.
+        legacy_installments = obj.installments.filter(phase__isnull=True)
+        return YatraInstallmentSerializer(legacy_installments, many=True).data
 
 class AccommodationSerializer(serializers.ModelSerializer):
     class Meta:

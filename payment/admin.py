@@ -1,9 +1,16 @@
 from django.contrib import admin
 from .models import *
+from yatra.admin_utils import ActiveYatraAdminMixin
 
 
 @admin.register(Payment)
-class PaymentAdmin(admin.ModelAdmin):
+class PaymentAdmin(ActiveYatraAdminMixin, admin.ModelAdmin):
+    admin_yatra_lookup = 'installments__registration__yatra'
+    change_list_template = "admin/active_yatra_changelist.html"
+
+    def has_add_permission(self, request):
+        return False
+
     list_display = (
         'transaction_id', 
         'total_amount', 

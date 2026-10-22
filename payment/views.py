@@ -91,7 +91,8 @@ class BatchPaymentProofView(APIView):
             # ✅ Fetch installments matching the given labels
             installments = YatraInstallment.objects.filter(
                 yatra_id=yatra_id,
-                label__in=installment_labels
+                label__in=installment_labels,
+                phase=registration.phase if registration.phase_id else None,
             )
             if not installments.exists():
                 logger.warning(f"No matching installments found for labels={installment_labels} in yatra={yatra_id}")

@@ -1,0 +1,21 @@
+{% extends "admin/change_list.html" %}
+
+{% block object-tools-items %}
+  {{ block.super }}
+  <li>
+    <form method="get" style="display:inline;">
+      {% for key, value in request.GET.items %}
+        {% if key != "show_all" %}
+          <input type="hidden" name="{{ key }}" value="{{ value }}">
+        {% endif %}
+      {% endfor %}
+      {% if show_all_yatras %}
+        <input type="hidden" name="show_all" value="0">
+        <button type="submit" class="button">Show active Yatras only</button>
+      {% else %}
+        <input type="hidden" name="show_all" value="1">
+        <button type="submit" class="button">Show All</button>
+      {% endif %}
+    </form>
+  </li>
+{% endblock %}

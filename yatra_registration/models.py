@@ -32,6 +32,13 @@ class YatraRegistration(models.Model):
     yatra = models.ForeignKey(Yatra, on_delete=models.CASCADE)
     registered_by = models.ForeignKey(Profile, related_name='registrations_made', on_delete=models.CASCADE)
     registered_for = models.ForeignKey(Profile, related_name='registrations_received', on_delete=models.CASCADE)
+    phase = models.ForeignKey(
+        RegistrationPhase,
+        related_name='registrations',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
     status = models.CharField(
         max_length=20, 
         choices=[
@@ -72,7 +79,12 @@ class YatraRegistration(models.Model):
     @property
     def total_amount(self):
         """Total amount for all installments of this yatra"""
-        return sum(inst.amount for inst in self.yatra.installments.all())
+        installments = (
+            self.phase.installments.all()
+            if self.phase_id
+            else self.yatra.installments.filter(phase__isnull=True)
+        )
+        return sum(inst.amount for inst in installments)
 
     @property
     def paid_amount(self):
@@ -93,7 +105,11 @@ class YatraRegistration(models.Model):
 
     def update_status(self):
         """Update registration status based on payments"""
-        total_installments = self.yatra.installments.count()
+        total_installments = (
+            self.phase.installments.count()
+            if self.phase_id
+            else self.yatra.installments.filter(phase__isnull=True).count()
+        )
 
         paid_installments = self.installments.filter(is_paid=True).count()
         initiated_installments = self.installments.filter(payment__isnull=False).count()
