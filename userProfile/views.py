@@ -5,7 +5,7 @@ from .models import *
 from .serializers import *
 from django.shortcuts import get_object_or_404
 from rest_framework.permissions import IsAdminUser, AllowAny, IsAuthenticated
-from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from helpers.mail import send_template_email
 from django.conf import settings
 from django.utils import timezone
@@ -17,13 +17,15 @@ from django.db.models.functions import Lower
 # ✅ Get base URL from settings
 frontend_url = getattr(settings, "FRONTEND_BASE_URL", "http://localhost:5173/")
 home_url = f"{frontend_url.rstrip('/')}/"
+MAX_PROFILE_PHOTO_SIZE = 1 * 1024 * 1024
 
 
 def create_bace_verification_requests(profile, bace):
-    """Create verification requests for every mentor and the Bace counsellor."""
-    recipients = list(bace.mentors.all())
-    if bace.counsellor and bace.counsellor not in recipients:
-        recipients.append(bace.counsellor)
+    """Create one verification request owned by the Bace counsellor."""
+    if not bace or not bace.counsellor or bace.counsellor == profile:
+        return None
+
+    now = timezone.now()
 
     # A profile changing Bace starts a fresh verification round.
     MentorRequest.objects.filter(
@@ -32,23 +34,39 @@ def create_bace_verification_requests(profile, bace):
         is_rejected=False,
     ).exclude(requested_bace=bace).update(
         is_rejected=True,
-        rejected_at=timezone.now(),
+        rejected_at=now,
     )
 
-    for recipient in recipients:
-        if recipient == profile:
-            continue
-        request_obj, _ = MentorRequest.objects.get_or_create(
+    # Reuse an already-pending counsellor-owned request, if present. A
+    # rejected request is deliberately not reused: resubmission creates a
+    # fresh request while preserving the previous rejection history.
+    request_obj = MentorRequest.objects.filter(
+        from_user=profile,
+        to_mentor=bace.counsellor,
+        requested_bace=bace,
+        is_approved=False,
+        is_rejected=False,
+    ).order_by("created_at").first()
+    if request_obj is None:
+        request_obj = MentorRequest.objects.create(
             from_user=profile,
-            to_mentor=recipient,
+            to_mentor=bace.counsellor,
             requested_bace=bace,
-            defaults={"is_approved": False, "is_rejected": False},
+            is_approved=False,
+            is_rejected=False,
         )
-        if request_obj.is_rejected and not request_obj.is_approved:
-            request_obj.is_rejected = False
-            request_obj.rejected_at = None
-            request_obj.rejected_by = None
-            request_obj.save(update_fields=["is_rejected", "rejected_at", "rejected_by"])
+
+    # Consolidate any older mentor-owned pending rows for this same Bace.
+    MentorRequest.objects.filter(
+        from_user=profile,
+        requested_bace=bace,
+        is_approved=False,
+        is_rejected=False,
+    ).exclude(pk=request_obj.pk).update(
+        is_rejected=True,
+        rejected_at=now,
+    )
+    return request_obj
 
 
 def reviewer_baces(profile):
@@ -116,6 +134,7 @@ class ProfileView(APIView):
     """
 
     permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get(self, request):
         """Return the logged-in user's profile"""
@@ -123,6 +142,7 @@ class ProfileView(APIView):
         serializer = ProfileSerializer(profile, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    @transaction.atomic
     def post(self, request):
         """Create or update profile; handle mentor requests automatically"""
         profile, created = Profile.objects.get_or_create(user=request.user)
@@ -162,6 +182,34 @@ class ProfileView(APIView):
             )
 
         bace = requested_bace
+
+        incoming_photo = request.FILES.get("profile_picture")
+        if incoming_photo and incoming_photo.size > MAX_PROFILE_PHOTO_SIZE:
+            return Response(
+                {"profile_picture": "Photo must be 1 MB or smaller."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if (
+            profile.profile_verification_status != "verified"
+            and not incoming_photo
+            and not profile.profile_picture
+        ):
+            return Response(
+                {"profile_picture": "A profile photo is required before submission."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if (
+            requested_center
+            and bace
+            and not bace.counsellor
+            and profile.profile_verification_status != "verified"
+        ):
+            return Response(
+                {"center": "This Bace does not have a counsellor assigned yet."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
      
 
         # ✅ Handle mentor change (by member_id)
@@ -247,13 +295,26 @@ class ProfilePictureUploadView(APIView):
         if not image:
             return Response({'error': 'No image file provided'}, status=status.HTTP_400_BAD_REQUEST)
 
+        if image.size > MAX_PROFILE_PHOTO_SIZE:
+            return Response(
+                {'error': 'Photo must be 1 MB or smaller.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        image_serializer = ProfileSerializer(
+            profile,
+            data={'profile_picture': image},
+            partial=True,
+            context={'request': request},
+        )
+        if not image_serializer.is_valid():
+            return Response(image_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
         # Remove old image if exists
         if profile.profile_picture:
             profile.profile_picture.delete(save=False)
 
-        # Assign new image and save
-        profile.profile_picture = image
-        profile.save()
+        image_serializer.save()
 
         serializer = ProfileSerializer(profile, context={'request': request})
         return Response({
