@@ -141,16 +141,20 @@ class ProfileSerializer(serializers.ModelSerializer):
 class BaceSerializer(serializers.ModelSerializer):
     counsellor_name = serializers.SerializerMethodField()
     mentor_ids = serializers.SerializerMethodField()
+    other_centers = serializers.SerializerMethodField()
 
     class Meta:
         model = Bace
-        fields = ['id', 'name', 'is_active', 'counsellor', 'counsellor_name', 'mentor_ids']
+        fields = ['id', 'name', 'is_active', 'counsellor', 'counsellor_name', 'mentor_ids', 'other_centers']
 
     def get_counsellor_name(self, obj):
         return obj.counsellor.full_name() if obj.counsellor else None
 
     def get_mentor_ids(self, obj):
         return list(obj.mentors.values_list('id', flat=True))
+
+    def get_other_centers(self, obj):
+        return list(obj.other_centers.filter(is_active=True).values_list('name', flat=True))
 
 
 

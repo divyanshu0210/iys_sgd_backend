@@ -188,5 +188,23 @@ class Bace(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class OtherCenter(models.Model):
+    """Named centers routed through a shared Bace, normally Others."""
+
+    bace = models.ForeignKey(
+        Bace,
+        on_delete=models.CASCADE,
+        related_name="other_centers",
+    )
+    name = models.CharField(max_length=150, unique=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
     
 

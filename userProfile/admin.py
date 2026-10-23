@@ -23,6 +23,12 @@ class BaceAdminForm(forms.ModelForm):
         ).order_by('first_name', 'last_name')
 
 
+class OtherCenterInline(admin.TabularInline):
+    model = OtherCenter
+    extra = 1
+    fields = ('name', 'is_active')
+
+
 @admin.register(Bace)
 class BaceAdmin(admin.ModelAdmin):
     form = BaceAdminForm
@@ -30,6 +36,13 @@ class BaceAdmin(admin.ModelAdmin):
     list_filter = ('is_active',)
     search_fields = ('name', 'counsellor__first_name', 'counsellor__last_name')
     filter_horizontal = ('mentors',)
+    inlines = [OtherCenterInline]
+
+    def get_inline_instances(self, request, obj=None):
+        inline_instances = super().get_inline_instances(request, obj)
+        if not obj or obj.name.strip().lower() != "others":
+            return []
+        return inline_instances
 
     def mentor_count(self, obj):
         return obj.mentors.count()
@@ -204,15 +217,41 @@ class MentorOnlyFilter(admin.SimpleListFilter):
 
 @admin.register(MentorRequest)
 class MentorRequestAdmin(admin.ModelAdmin):
-    list_display = ('id','from_user', 'to_mentor', 'is_approved','approved_at','created_at')
+    list_display = (
+        'id',
+        'from_user',
+        'requested_bace_display',
+        'to_mentor',
+        'is_approved',
+        'approved_at',
+        'created_at',
+    )
+    readonly_fields = ('requested_bace_display',)
+    exclude = ('requested_bace',)
     search_fields = (
         'from_user__first_name',
         'to_mentor__first_name',
         'from_user__member_id',
         'to_mentor__member_id',
+        'from_user__center',
+        'requested_bace__name',
     )
-    list_filter = ('is_approved', 'created_at','approved_at',MentorOnlyFilter)
+    list_filter = ('is_approved', 'requested_bace', 'created_at', 'approved_at', MentorOnlyFilter)
     ordering = ('-created_at',)
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related(
+            'from_user', 'to_mentor', 'requested_bace'
+        )
+
+    @admin.display(description='Requested Bace', ordering='requested_bace__name')
+    def requested_bace_display(self, obj):
+        routing_bace = obj.requested_bace.name if obj.requested_bace else None
+        selected_center = obj.from_user.center if obj.from_user else None
+
+        if routing_bace == 'Others' and selected_center and selected_center != 'Others':
+            return f'{routing_bace} ({selected_center})'
+        return routing_bace or selected_center or '-'
 
     
     def has_add_permission(self, request):

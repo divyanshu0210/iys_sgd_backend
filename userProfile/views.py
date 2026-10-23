@@ -54,7 +54,7 @@ class BaceListView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
-        baces = Bace.objects.filter(is_active=True).select_related("counsellor").prefetch_related("mentors")
+        baces = Bace.objects.filter(is_active=True).select_related("counsellor").prefetch_related("mentors", "other_centers")
         return Response(BaceSerializer(baces, many=True, context={"request": request}).data)
 
 
@@ -90,16 +90,21 @@ class ProfileView(APIView):
             name=requested_center, is_active=True
         ).first() if requested_center else None
         if requested_center and not requested_bace:
+            configured_other = OtherCenter.objects.filter(
+                name__iexact=requested_center,
+                is_active=True,
+                bace__is_active=True,
+            ).select_related("bace").first()
+            requested_bace = configured_other.bace if configured_other else None
+        if requested_center and not requested_bace:
             requested_bace = Bace.objects.filter(name="Others", is_active=True).first()
             if not requested_bace:
                 return Response(
                     {"center": "The fallback Bace 'Others' is not configured."},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
-            requested_center = requested_bace.name
 
-        current_bace = Bace.objects.filter(name=profile.center, is_active=True).first()
-        current_center = current_bace.name if current_bace else ("Others" if profile.center else "")
+        current_center = profile.center or ""
 
         if (
             profile.profile_verification_status == "verified"
