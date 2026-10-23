@@ -10,6 +10,7 @@ from helpers.mail import send_template_email
 from django.conf import settings
 from django.utils import timezone
 from django.db import transaction
+from django.db.models import Q
 from django.db.models.functions import Lower
 
 # models.py
@@ -48,6 +49,51 @@ def create_bace_verification_requests(profile, bace):
             request_obj.rejected_at = None
             request_obj.rejected_by = None
             request_obj.save(update_fields=["is_rejected", "rejected_at", "rejected_by"])
+
+
+def reviewer_baces(profile):
+    """Return the active Baces managed by this counsellor or mentor."""
+    return Bace.objects.filter(
+        is_active=True,
+    ).filter(
+        Q(mentors=profile) | Q(counsellor=profile),
+    ).distinct()
+
+
+def reviewer_request_scope(profile):
+    """Requests this reviewer may see or action, including legacy rows."""
+    managed_baces = reviewer_baces(profile)
+    active_bace_names = Bace.objects.filter(
+        is_active=True,
+    ).values_list("name", flat=True)
+    legacy_center_names = list(
+        active_bace_names
+    ) + list(
+        OtherCenter.objects.filter(
+            is_active=True,
+            bace__is_active=True,
+        ).values_list(
+            "name", flat=True
+        )
+    )
+    legacy_unknown_center_scope = Q(pk=None)
+    if managed_baces.filter(name="Others").exists():
+        legacy_unknown_center_scope = Q(
+            requested_bace__isnull=True,
+        ) & (
+            Q(from_user__center__isnull=True)
+            | ~Q(from_user__center__in=legacy_center_names)
+        )
+
+    return (
+        Q(to_mentor=profile)
+        | Q(requested_bace__in=managed_baces)
+        | Q(
+            requested_bace__isnull=True,
+            from_user__center__in=legacy_center_names,
+        )
+        | legacy_unknown_center_scope
+    )
 
 
 class BaceListView(APIView):
@@ -107,11 +153,11 @@ class ProfileView(APIView):
         current_center = profile.center or ""
 
         if (
-            profile.profile_verification_status == "verified"
+            profile.profile_verification_status in {"pending", "verified"}
             and requested_center != current_center
         ):
             return Response(
-                {"center": "A verified profile cannot change its Bace."},
+                {"center": "A profile under verification or already verified cannot change its Bace."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -237,9 +283,9 @@ class MentorRequestView(APIView):
         # 1. APPROVED MENTEES (from approved MentorRequest)
         # =================================================================
         approved_requests = MentorRequest.objects.filter(
-            to_mentor=mentor_profile,
+            reviewer_request_scope(mentor_profile),
             is_approved=True,
-        ).select_related('from_user__user').order_by(
+        ).select_related('from_user__user', 'requested_bace').distinct().order_by(
             Lower('from_user__first_name'),
             Lower('from_user__last_name'),
             'from_user_id',
@@ -254,10 +300,10 @@ class MentorRequestView(APIView):
         # 2. PENDING REQUESTS (from MentorRequest, not approved yet)
         # =================================================================
         pending_requests = MentorRequest.objects.filter(
-            to_mentor=mentor_profile,
+            reviewer_request_scope(mentor_profile),
             is_approved=False,
             is_rejected=False,
-        ).select_related('from_user__user').order_by(
+        ).select_related('from_user__user', 'requested_bace').distinct().order_by(
             Lower('from_user__first_name'),
             Lower('from_user__last_name'),
             'from_user_id',
@@ -302,9 +348,10 @@ class MentorRequestView(APIView):
         mentor_profile = request.user.profile
         print(request_id,'printing req id ...................................')
         req = get_object_or_404(
-            MentorRequest,
+            MentorRequest.objects.filter(
+                reviewer_request_scope(mentor_profile),
+            ),
             id=request_id,
-            to_mentor=mentor_profile,
             is_approved=False,
             is_rejected=False,
         )
@@ -364,11 +411,12 @@ class MentorRequestView(APIView):
         mentor_profile = request.user.profile
 
         try:
-            req = MentorRequest.objects.get(
+            req = MentorRequest.objects.filter(
+                reviewer_request_scope(mentor_profile),
                 id=request_id,
-                to_mentor=mentor_profile,
-                is_approved=False
-            )
+                is_approved=False,
+                is_rejected=False,
+            ).get()
         except MentorRequest.DoesNotExist:
             return Response({"error": "Request not found or already processed"}, status=status.HTTP_404_NOT_FOUND)
 
