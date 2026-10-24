@@ -613,17 +613,7 @@ class YatraRegistrationView(APIView):
                         installments_info = []
                         for inst in profile_installments:
                             ri = inst_map.get(inst.id)
-                            if ri:
-                                if ri.is_paid:
-                                    tag = "verified"
-                                elif ri.payment and ri.verified_by:
-                                    tag = ri.payment.status
-                                elif ri.payment:
-                                    tag = "verification pending"
-                                else:
-                                    tag = "due"
-                            else:
-                                tag = "due"
+                            tag = calculate_installment_tag(ri) if ri else "due"
 
                             installments_info.append({
                                 "label": inst.label,
@@ -1065,6 +1055,7 @@ class YatraRegistrationDetailView(APIView):
                         "order": inst.order,
                         "start_date": inst.start_date,
                         "is_paid": False,
+                        "tag": "due",
                         "paid_at": None,
                         "verified_by": None,
                         "verified_at": None,

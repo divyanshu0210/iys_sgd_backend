@@ -4,6 +4,20 @@ from .models import *
 from payment.serializers import PaymentSerializer
 
 
+def calculate_installment_tag(installment):
+    """Return the frontend-facing status for a registration installment."""
+    if getattr(installment, 'is_paid', False):
+        return 'verified'
+
+    payment = getattr(installment, 'payment', None)
+    if payment:
+        if getattr(installment, 'verified_by_id', None):
+            return (payment.status or 'verification pending').lower()
+        return 'verification pending'
+
+    return 'due'
+
+
 class YatraEligibilitySerializer(serializers.ModelSerializer):
     profile_name = serializers.SerializerMethodField()
     approved_by_name = serializers.SerializerMethodField()
@@ -55,6 +69,10 @@ class InstallmentSerializer(serializers.ModelSerializer):
     order = serializers.IntegerField(source='installment.order', read_only=True)
     start_date = serializers.DateField(source='installment.start_date', read_only=True)
     payment = PaymentSerializer(read_only=True)
+    tag = serializers.SerializerMethodField()
+
+    def get_tag(self, obj):
+        return calculate_installment_tag(obj)
 
     class Meta:
         model = YatraRegistrationInstallment
@@ -64,6 +82,7 @@ class InstallmentSerializer(serializers.ModelSerializer):
             'amount',
             'order',
             'start_date',
+            'tag',
             'is_paid',
             'paid_at',
             'verified_by',
