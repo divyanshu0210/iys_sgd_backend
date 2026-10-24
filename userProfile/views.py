@@ -346,7 +346,7 @@ class MentorRequestView(APIView):
         approved_requests = MentorRequest.objects.filter(
             reviewer_request_scope(mentor_profile),
             is_approved=True,
-        ).select_related('from_user__user', 'requested_bace').distinct().order_by(
+        ).select_related('from_user__user', 'from_user__mentor', 'requested_bace').distinct().order_by(
             Lower('from_user__first_name'),
             Lower('from_user__last_name'),
             'from_user_id',
@@ -364,7 +364,7 @@ class MentorRequestView(APIView):
             reviewer_request_scope(mentor_profile),
             is_approved=False,
             is_rejected=False,
-        ).select_related('from_user__user', 'requested_bace').distinct().order_by(
+        ).select_related('from_user__user', 'from_user__mentor', 'requested_bace').distinct().order_by(
             Lower('from_user__first_name'),
             Lower('from_user__last_name'),
             'from_user_id',
@@ -385,8 +385,8 @@ class MentorRequestView(APIView):
         # 3. STATS
         # =================================================================
         stats = {
-            "total_mentees": approved_requests.count(),
-            "pending_requests": pending_requests.count(),
+            "total_mentees": len(approved_mentees_data),
+            "pending_requests": len(pending_requests_data),
         }
 
         # =================================================================

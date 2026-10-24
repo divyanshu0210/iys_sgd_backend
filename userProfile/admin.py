@@ -19,8 +19,21 @@ class BaceAdminForm(forms.ModelForm):
         self.fields['counsellor'].required = True
         self.fields['counsellor'].queryset = Profile.objects.filter(user_type='counsellor').order_by('first_name', 'last_name')
         self.fields['mentors'].queryset = Profile.objects.filter(
-            Q(user_type='mentor') | Q(user__is_superuser=True)
+            Q(user_type__in=['mentor', 'counsellor']) | Q(user__is_superuser=True)
         ).order_by('first_name', 'last_name')
+
+    def clean(self):
+        cleaned_data = super().clean()
+        counsellor = cleaned_data.get('counsellor')
+        mentors = cleaned_data.get('mentors')
+
+        if counsellor and mentors is not None and mentors.filter(pk=counsellor.pk).exists():
+            self.add_error(
+                'mentors',
+                'The counsellor cannot also be assigned as a mentor for the same Bace.',
+            )
+
+        return cleaned_data
 
 
 class OtherCenterInline(admin.TabularInline):
@@ -134,10 +147,10 @@ class ProfileAdmin(admin.ModelAdmin):
     # ---------------------------
 
     def mentor_display(self, obj):
-        if not obj.mentor or obj.mentor.member_id is None:
+        if not obj.mentor:
             return "-"
-        return obj.mentor.formatted_member_id()
-    mentor_display.short_description = "Mentor ID"
+        return obj.mentor.full_name() or obj.mentor.user.username
+    mentor_display.short_description = "Mentor Name"
 
     def mentor_request_approved(self, obj):
         if obj.last_request_is_approved is None:
@@ -227,7 +240,7 @@ class MentorRequestAdmin(admin.ModelAdmin):
         'created_at',
     )
     readonly_fields = ('requested_bace_display',)
-    exclude = ('requested_bace',)
+    # exclude = ('requested_bace',)
     search_fields = (
         'from_user__first_name',
         'to_mentor__first_name',
@@ -240,17 +253,26 @@ class MentorRequestAdmin(admin.ModelAdmin):
     ordering = ('-created_at',)
 
     def get_queryset(self, request):
-        return super().get_queryset(request).select_related(
+        queryset = super().get_queryset(request).select_related(
             'from_user', 'to_mentor', 'requested_bace'
         )
+        self._configured_bace_names = {
+            name.casefold(): name
+            for name in Bace.objects.values_list('name', flat=True)
+            if name
+        }
+        return queryset
 
     @admin.display(description='Requested Bace', ordering='requested_bace__name')
     def requested_bace_display(self, obj):
         routing_bace = obj.requested_bace.name if obj.requested_bace else None
         selected_center = obj.from_user.center if obj.from_user else None
 
-        if routing_bace == 'Others' and selected_center and selected_center != 'Others':
-            return f'{routing_bace} ({selected_center})'
+        if selected_center and selected_center != 'Others':
+            configured_bace = self._configured_bace_names.get(selected_center.casefold())
+            if configured_bace:
+                return configured_bace
+            return f'Others ({selected_center})'
         return routing_bace or selected_center or '-'
 
     

@@ -158,7 +158,15 @@ class MentorRequest(models.Model):
             models.Index(
                 fields=['from_user', 'to_mentor', '-created_at'],
                 name='mentorreq_from_to_created_idx',
-            )
+            ),
+            models.Index(
+                fields=['requested_bace', 'is_approved', 'is_rejected'],
+                name='mentorreq_bace_status_idx',
+            ),
+            models.Index(
+                fields=['to_mentor', 'is_approved', 'is_rejected'],
+                name='mentorreq_mentor_status_idx',
+            ),
         ]
 
     def __str__(self):

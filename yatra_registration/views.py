@@ -470,8 +470,6 @@ class YatraRegistrationView(APIView):
                 # APPROVED MENTEES
                 # =====================================================
                 mentees = list(profiles_for_reviewer(user_profile))
-                print("STEP 2: mentees fetched", mentees)
-
                 profile_ids = list(mentees)
 
                 # =====================================================
@@ -490,8 +488,6 @@ class YatraRegistrationView(APIView):
                     is_approved=True
                 ).exists():
                     profile_ids.insert(0, user_profile.id)
-
-                print("STEP 3: profile_ids", profile_ids)
 
                 # =====================================================
                 # FAST PROFILE QUERY (ANNOTATED)
@@ -523,15 +519,10 @@ class YatraRegistrationView(APIView):
                     )
                 )
 
-                print("STEP 4: profiles_qs COUNT =", profiles_qs.count())
-
                 profiles_data = ProfileFastSerializer(profiles_qs, many=True).data
-                print("STEP 5: profiles serialized", len(profiles_data))
 
                 # profile_map = {p['id']: p for p in profiles_data}
                 profile_map = {UUID(p['id']): p for p in profiles_data}
-
-                print("STEP 6: profile_map keys", profile_map.keys())
 
                 # =====================================================
                 # ELIGIBILITY MAP
@@ -542,8 +533,6 @@ class YatraRegistrationView(APIView):
                     .select_related('approved_by')
                 )
                 eligibility_map = {e.profile_id: e for e in eligibilities}
-
-                print("STEP 7: eligibility_map keys", eligibility_map.keys())
 
                 # =====================================================
                 # REGISTRATIONS (FULLY PREFETCHED)
@@ -562,12 +551,12 @@ class YatraRegistrationView(APIView):
                     )
                 )
 
-                print("STEP 8: registrations COUNT =", registrations.count())
-
                 registration_map = {r.registered_for_id: r for r in registrations}
                 legacy_installments = installments_for_phase(yatra)
-
-                print("STEP 9: legacy_installments", [i.label for i in legacy_installments])
+                phase_installments = {
+                    phase.id: list(phase.installments.all())
+                    for phase in yatra.registration_phases.all()
+                }
 
                 # =====================================================
                 # SUBSTITUTION REQUESTS (BULK)
@@ -581,14 +570,10 @@ class YatraRegistrationView(APIView):
                     )
                 }
 
-                print("STEP 10: substitution_map keys", substitution_map.keys())
-
                 # =====================================================
                 # MERGE ALL DATA
                 # =====================================================
                 for pid in profile_ids:
-                    print("STEP 11: processing profile", pid)
-
                     pdata = profile_map.get(pid)
                     if not pdata:
                         print("⚠️ WARNING: profile missing in profile_map", pid)
@@ -597,7 +582,11 @@ class YatraRegistrationView(APIView):
                     eligibility = eligibility_map.get(pid)
                     registration = registration_map.get(pid)
                     registration_phase = phase_for_registration(yatra, registration)
-                    profile_installments = installments_for_phase(yatra, registration_phase)
+                    profile_installments = (
+                        phase_installments.get(registration_phase.id, [])
+                        if registration_phase
+                        else legacy_installments
+                    )
 
                     pdata.update({
                         'is_eligible': True if not requires_approval else (eligibility.is_approved if eligibility else False),
@@ -610,8 +599,6 @@ class YatraRegistrationView(APIView):
                     })
 
                     if registration:
-                        print("STEP 12: has registration", registration.id)
-
                         reg_installments = list(registration.installments.all())
                         inst_map = {i.installment_id: i for i in reg_installments}
 
@@ -701,7 +688,6 @@ class YatraRegistrationView(APIView):
                         })
 
                     else:
-                        print("STEP 13: NOT registered", pid)
                         pdata.update({
                             'is_registered': False,
                             'registration_status': "pending",
@@ -726,8 +712,6 @@ class YatraRegistrationView(APIView):
                             'is_substitution': False,
                             'pending_substitution_fees': None,
                         })
-
-                print("STEP 14: RESPONSE READY")
 
                 return Response({
                     "yatra": YatraSerializer(yatra, context={'request': request}).data,
