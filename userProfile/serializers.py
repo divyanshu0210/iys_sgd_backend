@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from .models import *
 from django.conf import settings
+from django.core.cache import cache
 from rest_framework import serializers
 from .models import Profile
 
@@ -164,6 +165,20 @@ class ProfileFastSerializer(serializers.ModelSerializer):
     mentor_member_id = serializers.IntegerField(source='mentor.member_id', allow_null=True)
     # Fix: point to the actual related field
     mentor_name = serializers.CharField(source='mentor.full_name', allow_null=True, default=None)
+    profile_picture = serializers.SerializerMethodField()
+
+    def get_profile_picture(self, obj):
+        """Cache expensive R2 signed-URL generation for repeated list reads."""
+        if not obj.profile_picture:
+            return None
+
+        cache_key = f"profile-picture-url:{obj.pk}:{obj.profile_picture.name}"
+        cached_url = cache.get(cache_key)
+        if cached_url is None:
+            cached_url = obj.profile_picture.url
+            # Keep this below the usual signed-URL lifetime.
+            cache.set(cache_key, cached_url, timeout=300)
+        return cached_url
 
     class Meta:
         model = Profile

@@ -68,7 +68,14 @@ class YatraSerializer(serializers.ModelSerializer):
         # The top-level list is reserved for pre-phase/legacy installments.
         # Phase installments are exposed only under their RegistrationPhase,
         # preventing consumers from accidentally mixing phases.
-        legacy_installments = obj.installments.filter(phase__isnull=True)
+        prefetched_installments = getattr(obj, '_prefetched_objects_cache', {}).get('installments')
+        if prefetched_installments is not None:
+            legacy_installments = [
+                installment for installment in prefetched_installments
+                if installment.phase_id is None
+            ]
+        else:
+            legacy_installments = obj.installments.filter(phase__isnull=True)
         return YatraInstallmentSerializer(legacy_installments, many=True).data
 
 class AccommodationSerializer(serializers.ModelSerializer):

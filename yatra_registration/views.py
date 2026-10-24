@@ -22,8 +22,6 @@ from django.utils import timezone
 from uuid import UUID
 from django.contrib.admin.views.decorators import staff_member_required
 from django.utils.decorators import method_decorator
-
-
 def active_registration_phase(yatra, on_date=None):
     """Return the most recently started phase active on the given date."""
     on_date = on_date or timezone.localdate()
@@ -458,13 +456,22 @@ class YatraRegistrationView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, yatra_id):
-            print("STEP 0: ENTER VIEW")
             # return Response({"detail": "This endpoint is under maintenance."}, status=200)
 
             try:
-                yatra = get_object_or_404(Yatra, id=yatra_id)
+                yatra = get_object_or_404(
+                    Yatra.objects
+                    .select_related('registration_policy')
+                    .prefetch_related(
+                        'form_fields',
+                        'installments',
+                        'registration_phases__installments',
+                        'contact_categories',
+                        'important_notes',
+                    ),
+                    id=yatra_id,
+                )
                 user_profile = request.user.profile
-                print("STEP 1: yatra & user_profile OK", yatra.id, user_profile.id)
 
                 # =====================================================
                 # APPROVED MENTEES
@@ -519,7 +526,8 @@ class YatraRegistrationView(APIView):
                     )
                 )
 
-                profiles_data = ProfileFastSerializer(profiles_qs, many=True).data
+                profiles = list(profiles_qs)
+                profiles_data = ProfileFastSerializer(profiles, many=True).data
 
                 # profile_map = {p['id']: p for p in profiles_data}
                 profile_map = {UUID(p['id']): p for p in profiles_data}
@@ -557,6 +565,9 @@ class YatraRegistrationView(APIView):
                     phase.id: list(phase.installments.all())
                     for phase in yatra.registration_phases.all()
                 }
+                # Cache the active phase once. Without this, every profile
+                # with no registration recalculates it with a database query.
+                active_phase = active_registration_phase(yatra)
 
                 # =====================================================
                 # SUBSTITUTION REQUESTS (BULK)
@@ -576,12 +587,14 @@ class YatraRegistrationView(APIView):
                 for pid in profile_ids:
                     pdata = profile_map.get(pid)
                     if not pdata:
-                        print("⚠️ WARNING: profile missing in profile_map", pid)
                         continue
 
                     eligibility = eligibility_map.get(pid)
                     registration = registration_map.get(pid)
-                    registration_phase = phase_for_registration(yatra, registration)
+                    registration_phase = (
+                        phase_for_registration(yatra, registration)
+                        if registration else active_phase
+                    )
                     profile_installments = (
                         phase_installments.get(registration_phase.id, [])
                         if registration_phase
@@ -703,13 +716,14 @@ class YatraRegistrationView(APIView):
                             'pending_substitution_fees': None,
                         })
 
-                return Response({
-                    "yatra": YatraSerializer(yatra, context={'request': request}).data,
+                yatra_data = YatraSerializer(yatra, context={'request': request}).data
+                response_data = {
+                    "yatra": yatra_data,
                     "profiles": list(profile_map.values()),
-                })
+                }
+                return Response(response_data)
 
             except Exception as e:
-                print("❌ ERROR OCCURRED:", type(e).__name__, str(e))
                 raise
 
     def post(self, request, yatra_id):
