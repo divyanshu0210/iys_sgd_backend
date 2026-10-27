@@ -13,12 +13,17 @@ from userProfile.serializers import *
 from .serializers import *
 from userProfile.models import *
 from payment.models import *
+from helpers.notifications import (
+    notify_yatra_approval_request,
+    notify_yatra_eligibility_decision,
+)
 from .models import YatraRegistration
 from django.db.models import (
     F, Value, CharField, OuterRef, Exists, Q
 )
 from django.db.models.functions import Concat, Lower
 from django.utils import timezone
+from django.db import transaction
 from uuid import UUID
 from django.contrib.admin.views.decorators import staff_member_required
 from django.utils.decorators import method_decorator
@@ -335,6 +340,11 @@ class YatraEligibilityView(APIView):
                 )
                 eligibility.save()
 
+                if created:
+                    transaction.on_commit(
+                        lambda: notify_yatra_approval_request(eligibility)
+                    )
+
                 updated.append({
                     'profile_id': str(devotee.id),
                     'action': 'request_approval',
@@ -375,7 +385,7 @@ class YatraEligibilityView(APIView):
             eligibility, created = YatraEligibility.objects.get_or_create(
                 yatra=yatra,
                 profile=profile,
-                defaults={'approved_by': devotee}
+                defaults={'approved_by': devotee, 'is_approved': False}
             )
 
             
@@ -413,15 +423,17 @@ class YatraEligibilityView(APIView):
                 continue
 
             if action == 'approve':
-                eligibility, created = YatraEligibility.objects.get_or_create(
-                    yatra=yatra,
-                    profile=profile,
-                    defaults={'approved_by': devotee, 'is_approved': True}
-                )
-            if not created:
+                was_approved = eligibility.is_approved
                 eligibility.is_approved = True
                 eligibility.approved_by = devotee
                 eligibility.save()
+
+                if not was_approved:
+                    transaction.on_commit(
+                        lambda eligibility=eligibility: notify_yatra_eligibility_decision(
+                            eligibility, True, devotee
+                        )
+                    )
 
             updated.append({
                 'profile_id': str(profile.id),

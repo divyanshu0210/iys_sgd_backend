@@ -1,0 +1,17 @@
+{% extends "emails/base.html" %}
+{% block content %}
+<p class="greeting">Hare Krishna, {{ mentee_name }}!</p>
+{% if approved %}
+<p>Your profile has been <strong>verified and connected to {{ bace_name }}</strong> by <strong>{{ reviewer_name }}</strong>.</p>
+<p>You can now sign in to your dashboard and continue using the available services.</p>
+<p style="text-align:center;">
+  <a class="btn" href="{{ frontend_url }}" target="_blank">Go to Dashboard</a>
+</p>
+{% else %}
+<p>Your profile was <strong>rejected by {{ reviewer_name }}</strong> for <strong>{{ bace_name }}</strong>.</p>
+<p>Please review your profile details and submit it again, or choose another center if applicable.</p>
+<p style="text-align:center;">
+  <a class="btn" href="{{ frontend_url }}" target="_blank">Review Profile</a>
+</p>
+{% endif %}
+{% endblock %}

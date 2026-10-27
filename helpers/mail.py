@@ -10,6 +10,16 @@ def send_template_email(subject, template_name, context, recipient, fail_silentl
     html_body = render_to_string(f"emails/{template_name}", context)
     plain_body = _html_to_text(html_body)
 
+    if getattr(settings, 'EMAIL_PROVIDER', '').lower() in {'gmail', 'smtp'}:
+        try:
+            _send(subject, html_body, plain_body, recipient, settings.EMAIL_BACKEND)
+            return
+        except Exception:
+            logger.exception("SMTP email delivery failed")
+            if not fail_silently:
+                raise
+            return
+
     # Try primary backend (Brevo)
     try:
         _send(subject, html_body, plain_body, recipient, 'anymail.backends.brevo.EmailBackend')
@@ -43,7 +53,19 @@ def _send(subject, html_body, plain_body, recipient, backend):
 
 def _html_to_text(html):
     import re
+    from html import unescape
+
+    # Remove non-visible document sections before stripping HTML tags. Without
+    # this, the CSS from the email's <style> block leaks into the plain-text
+    # MIME part and some clients treat the message as trimmed content.
+    html = re.sub(
+        r"<(style|script)\b[^>]*>.*?</\1>",
+        "",
+        html,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
     text = re.sub(r"<[^>]+>", " ", html)
+    text = unescape(text)
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()

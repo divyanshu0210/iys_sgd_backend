@@ -1,0 +1,10 @@
+{% extends "emails/base.html" %}
+{% block content %}
+<p class="greeting">Hare Krishna, {{ profile_name }}!</p>
+{% if approved %}
+<p>Your request to register for <strong>{{ yatra_name }}</strong> has been approved by <strong>{{ reviewer_name }}</strong>.</p>
+{% else %}
+<p>Your request to register for <strong>{{ yatra_name }}</strong> was declined by <strong>{{ reviewer_name }}</strong>.</p>
+{% endif %}
+<p style="text-align:center;"><a class="btn" href="{{ frontend_url }}" target="_blank">Open Dashboard</a></p>
+{% endblock %}

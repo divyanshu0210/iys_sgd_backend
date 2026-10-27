@@ -18,6 +18,7 @@ import logging
 from rest_framework import status, permissions
 from django.db import connection
 from django.http import JsonResponse
+from helpers.notifications import notify_payment_submitted
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +140,8 @@ class UploadPaymentScreenshotView(APIView):
 
         payment.proof = file
         payment.save(update_fields=["proof"])
+
+        transaction.on_commit(lambda: notify_payment_submitted(payment))
 
         return Response({
             "message": "Screenshot uploaded successfully.",

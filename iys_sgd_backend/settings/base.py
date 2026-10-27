@@ -229,15 +229,41 @@ REST_USE_JWT = True
 JWT_AUTH_COOKIE = 'access'
 JWT_AUTH_REFRESH_COOKIE = 'refresh'
 
-# if DEBUG:
-#     EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
-# else : 
-EMAIL_BACKEND = 'anymail.backends.brevo.EmailBackend'  # default, overridden per-send
-ANYMAIL = {
-    'RESEND_API_KEY': config('RESEND_API_KEY'),
-    'BREVO_API_KEY': config('BREVO_API_KEY'),
-}
-DEFAULT_FROM_EMAIL = 'IYS_sgd <noreply@iys-sgd.in>'
+# DEBUG=True + no EMAIL_PROVIDER  → Gmail
+# DEBUG=False + no EMAIL_PROVIDER → Brevo
+# DEBUG=False + EMAIL_PROVIDER=gmail → Gmail
+# DEBUG=False + EMAIL_PROVIDER=brevo → Brevo
+
+# Use Gmail by default for local development and Brevo by default in
+# production. EMAIL_PROVIDER can explicitly override either default.
+EMAIL_PROVIDER = config(
+    'EMAIL_PROVIDER',
+    default='gmail' if DEBUG else 'brevo',
+).strip().lower()
+
+if EMAIL_PROVIDER in {'gmail', 'smtp'}:
+    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+    EMAIL_HOST = config('EMAIL_HOST', default='smtp.gmail.com').strip()
+    EMAIL_PORT = config('EMAIL_PORT', default=587, cast=int)
+    EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True, cast=bool)
+    EMAIL_USE_SSL = config('EMAIL_USE_SSL', default=False, cast=bool)
+    EMAIL_TIMEOUT = config('EMAIL_TIMEOUT', default=20, cast=int)
+    EMAIL_HOST_USER = config('EMAIL_HOST_USER').strip()
+    EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD').strip()
+    DEFAULT_FROM_EMAIL = config(
+        'DEFAULT_FROM_EMAIL',
+        default=f'IYS_sgd <{EMAIL_HOST_USER}>',
+    )
+else:
+    EMAIL_BACKEND = 'anymail.backends.brevo.EmailBackend'
+    ANYMAIL = {
+        'RESEND_API_KEY': config('RESEND_API_KEY'),
+        'BREVO_API_KEY': config('BREVO_API_KEY'),
+    }
+    DEFAULT_FROM_EMAIL = config(
+        'DEFAULT_FROM_EMAIL',
+        default='IYS_sgd <noreply@iys-sgd.in>',
+    )
 ACCOUNT_EMAIL_SUBJECT_PREFIX = ''
 
 ACCOUNT_SIGNUP_FIELDS =[ 'email*', 'password1*', 'password2*']
@@ -247,6 +273,7 @@ ACCOUNT_CONFIRM_EMAIL_ON_GET = True
 
 
 FRONTEND_BASE_URL = config("FRONTEND_BASE_URL")
+PUBLIC_BACKEND_BASE_URL = config("PUBLIC_BACKEND_BASE_URL", default="").rstrip("/")
 
 
 ACCOUNT_EMAIL_CONFIRMATION_AUTHENTICATED_REDIRECT_URL = None

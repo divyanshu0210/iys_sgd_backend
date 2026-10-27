@@ -3,6 +3,8 @@ import uuid
 from userProfile.models import *
 from yatra.models import *
 from django.utils import timezone
+from django.db import transaction
+from helpers.notifications import notify_payment_result
 
 
 # models.py - Add Payment model to track single transactions
@@ -44,6 +46,7 @@ class Payment(models.Model):
         return f"Payment {self.transaction_id} - ₹{self.total_amount}"
     
     def approve(self, user_profile, notes=""):
+        was_verified = self.status == "verified"
         self.status = "verified"
         self.processed_by = user_profile
         self.processed_at = timezone.now()
@@ -58,8 +61,11 @@ class Payment(models.Model):
             inst.verified_at = timezone.now()
             inst.save()
             inst.registration.update_status()
+        if not was_verified:
+            transaction.on_commit(lambda: notify_payment_result(self, True, user_profile))
 
     def reject(self, user_profile, notes=""):
+        was_rejected = self.status == "rejected"
         self.status = "rejected"
         self.processed_by = user_profile
         self.processed_at = timezone.now()
@@ -74,7 +80,9 @@ class Payment(models.Model):
             inst.verified_at = timezone.now()
             inst.save()
             inst.registration.update_status()
-    
+        if not was_rejected:
+            transaction.on_commit(lambda: notify_payment_result(self, False, user_profile))
+
     def mark_under_review(self, user_profile, notes=""):
         self.status = "under_review"
         self.processed_by = None
@@ -96,5 +104,3 @@ class Payment(models.Model):
     # Optional: also hide from change/view pages of related models
     def has_module_permission(self, request):
         return True  # Still show in admin menu
-
-    

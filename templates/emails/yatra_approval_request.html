@@ -1,0 +1,7 @@
+{% extends "emails/base.html" %}
+{% block content %}
+<p class="greeting">Hare Krishna, {{ reviewer_name }}!</p>
+<p><strong>{{ profile_name }}</strong> has requested approval to register for <strong>{{ yatra_name }}</strong>.</p>
+<p>Please log in to review the request.</p>
+<p style="text-align:center;"><a class="btn" href="{{ frontend_url }}" target="_blank">Review Request</a></p>
+{% endblock %}

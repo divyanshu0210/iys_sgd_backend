@@ -7,6 +7,11 @@ from django.shortcuts import get_object_or_404
 from rest_framework.permissions import IsAdminUser, AllowAny, IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from helpers.mail import send_template_email
+from helpers.notifications import (
+    notify_new_profile_request,
+    notify_mentor_request_decision,
+    notify_profile_review_update,
+)
 from django.conf import settings
 from django.utils import timezone
 from django.db import transaction
@@ -47,7 +52,8 @@ def create_bace_verification_requests(profile, bace):
         is_approved=False,
         is_rejected=False,
     ).order_by("created_at").first()
-    if request_obj is None:
+    created = request_obj is None
+    if created:
         request_obj = MentorRequest.objects.create(
             from_user=profile,
             to_mentor=bace.counsellor,
@@ -66,6 +72,8 @@ def create_bace_verification_requests(profile, bace):
         is_rejected=True,
         rejected_at=now,
     )
+    if created:
+        transaction.on_commit(lambda: notify_new_profile_request(request_obj))
     return request_obj
 
 
@@ -448,19 +456,12 @@ class MentorRequestView(APIView):
                 rejected_by=mentor_profile,
             )
 
-        # mentee_email = mentee.user.email
-        # if mentee_email:
-        #     send_template_email(
-        #         subject="Mentor Request Approved",
-        #         template_name="mentor_approved.html",
-        #         context={
-        #             "mentee_name": mentee.first_name or mentee.user.username,
-        #             "mentor_name": mentor_profile.first_name or mentor_profile.user.username,
-        #             "frontend_url": home_url,
-        #         },
-        #         recipient=mentee_email,
-        #         fail_silently=True,
-        #     )
+        transaction.on_commit(
+            lambda: notify_mentor_request_decision(req, True, mentor_profile)
+        )
+        transaction.on_commit(
+            lambda: notify_profile_review_update(req, mentor_profile)
+        )
 
         return Response({"message": "Mentee request approved successfully."}, status=status.HTTP_200_OK)
 
@@ -506,18 +507,9 @@ class MentorRequestView(APIView):
             "mentor", "user_type", "profile_verification_status",
         ])
 
-        # if mentee_email:
-        #     send_template_email(
-        #         subject="Mentor Request Update",
-        #         template_name="mentor_rejected.html",
-        #         context={
-        #             "mentee_name": mentee.first_name or mentee.user.username,
-        #             "mentor_name": mentor_profile.first_name or mentor_profile.user.username,
-        #             "frontend_url": home_url,
-        #         },
-        #         recipient=mentee_email,
-        #         fail_silently=True,
-        #     )
+        transaction.on_commit(
+            lambda: notify_mentor_request_decision(req, False, mentor_profile)
+        )
 
         return Response({"message": "Request rejected."}, status=status.HTTP_200_OK)
     
