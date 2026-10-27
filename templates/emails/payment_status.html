@@ -1,0 +1,33 @@
+{% extends "emails/base.html" %}
+{% block content %}
+<p class="greeting">Hare Krishna, {{ profile_name }}!</p>
+{% if status == "Submitted for review" %}
+<p>We have received your payment details for <strong>{{ yatra_name }}</strong>.</p>
+<p><strong>Status:</strong> Your payment is under review. We will let you know once it has been checked.</p>
+{% elif status == "Approved" %}
+<p>Your payment for <strong>{{ yatra_name }}</strong> has been successfully verified & approved.</p>
+{% else %}
+<p>We could not approve your payment for <strong>{{ yatra_name }}</strong>.</p>
+{% endif %}
+<p>Transaction ID: <strong>{{ transaction_id }}</strong><br>Amount: <strong>{{ amount }}</strong></p>
+{% if notes %}<p>Notes: {{ notes }}</p>{% endif %}
+<p><strong>Next step:</strong> {{ next_step }}</p>
+{% if payment_rows %}
+<p><strong>Payment details</strong></p>
+<table role="presentation" width="100%" cellpadding="6" cellspacing="0" border="1" style="border-collapse:collapse; border:1px solid #dddddd; font-size:12px; color:#333333;">
+<tr style="background:#f0f0f0;">
+<th align="left">Installment</th><th align="right">Amount</th><th align="left">Proof</th><th align="left">Status</th><th align="left">Transaction</th>
+</tr>
+{% for row in payment_rows %}
+<tr>
+<td>{{ row.installment_name }}</td>
+<td align="right">{{ row.amount }}</td>
+<td>{% if row.proof_url %}<a href="{{ row.proof_url }}" target="_blank">View proof</a>{% elif row.proof_submitted %}Submitted{% else %}Not submitted{% endif %}</td>
+<td>{{ row.status }}</td>
+<td>{% if row.transaction_id %}{{ row.transaction_id }}{% else %}—{% endif %}</td>
+</tr>
+{% endfor %}
+</table>
+{% endif %}
+<p style="text-align:center;"><a class="btn" href="{{ frontend_url }}" target="_blank">Open Dashboard</a></p>
+{% endblock %}

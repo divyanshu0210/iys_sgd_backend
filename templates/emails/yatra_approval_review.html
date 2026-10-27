@@ -1,0 +1,13 @@
+{% extends "emails/base.html" %}
+{% block content %}
+<p class="greeting">Hare Krishna, {{ reviewer_name }}!</p>
+{% if approved_profile_name %}
+<p><strong>{{ approved_profile_name }}</strong> has been approved for <strong>{{ yatra_name }}</strong> by <strong>{{ approved_by }}</strong>.</p>
+{% endif %}
+{% if pending_count %}
+<p><strong>{{ pending_count }}</strong> profile{% if pending_count != 1 %}s are{% else %} is{% endif %} requesting approval for <strong>{{ yatra_name }}</strong>.</p>
+{% else %}
+<p>There are no profiles currently pending for approval for <strong>{{ yatra_name }}</strong>.</p>
+{% endif %}
+<p style="text-align:center;"><a class="btn" href="{{ frontend_url }}" target="_blank">Review Requests</a></p>
+{% endblock %}

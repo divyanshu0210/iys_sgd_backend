@@ -206,8 +206,8 @@ def notify_mentor_request_decision(request_obj, approved, reviewer):
     )
 
 
-def notify_yatra_approval_request(eligibility):
-    """Tell every linked mentor/counsellor that Yatra approval is pending."""
+def _yatra_reviewers(eligibility):
+    """Return the linked counsellors/mentors who review this profile's Yatra."""
     from django.db.models import Q
     from userProfile.models import Bace
 
@@ -227,6 +227,19 @@ def notify_yatra_approval_request(eligibility):
     if eligibility.approved_by:
         reviewers.append(eligibility.approved_by)
 
+    return reviewers
+
+
+def _send_yatra_review_email(eligibility, reviewers, approved_profile=None, reviewer_who_acted=None):
+    from yatra_registration.models import YatraEligibility
+
+    pending_count = YatraEligibility.objects.filter(
+        yatra_id=eligibility.yatra_id,
+        is_approved=False,
+    ).count()
+    yatra_name = eligibility.yatra.title
+    subject = f"{yatra_name}: Yatra Approval"
+
     sent_to = set()
     for reviewer in reviewers:
         recipient = _email_for(reviewer)
@@ -234,15 +247,40 @@ def notify_yatra_approval_request(eligibility):
             continue
         sent_to.add(recipient.lower())
         _send(
-            "Yatra approval request",
-            "yatra_approval_request.html",
+            subject,
+            "yatra_approval_review.html",
             {
                 "reviewer_name": _name(reviewer),
-                "profile_name": _name(profile),
-                "yatra_name": eligibility.yatra.title,
+                "yatra_name": yatra_name,
+                "pending_count": pending_count,
+                "approved_profile_name": (
+                    _name(approved_profile) if approved_profile else None
+                ),
+                "approved_by": (
+                    "You"
+                    if reviewer_who_acted and reviewer.pk == reviewer_who_acted.pk
+                    else _name(reviewer_who_acted)
+                    if reviewer_who_acted
+                    else None
+                ),
             },
             reviewer,
         )
+
+
+def notify_yatra_approval_request(eligibility):
+    """Tell every linked mentor/counsellor that a Yatra approval was requested."""
+    _send_yatra_review_email(eligibility, _yatra_reviewers(eligibility))
+
+
+def notify_yatra_approval_update(eligibility, reviewer):
+    """Refresh every linked reviewer's Yatra approval queue after approval."""
+    _send_yatra_review_email(
+        eligibility,
+        _yatra_reviewers(eligibility),
+        approved_profile=eligibility.profile,
+        reviewer_who_acted=reviewer,
+    )
 
 
 def notify_yatra_eligibility_decision(eligibility, approved, reviewer):
@@ -260,29 +298,148 @@ def notify_yatra_eligibility_decision(eligibility, approved, reviewer):
 
 
 def notify_payment_submitted(payment):
+    yatra_name = _payment_yatra_name(payment)
+    payment_rows = _payment_status_rows(payment)
     _send(
-        "Payment proof submitted",
-        "payment_submitted.html",
+        f"{yatra_name}: Payment",
+        "payment_status.html",
         {
             "profile_name": _name(payment.uploaded_by),
+            "yatra_name": yatra_name,
             "transaction_id": payment.transaction_id,
             "amount": payment.total_amount,
+            "status": "Submitted for review",
+            "notes": None,
+            "payment_rows": payment_rows,
+            "next_step": _payment_next_step("Submitted for review", payment_rows),
         },
         payment.uploaded_by,
     )
 
 
+def _payment_yatra_name(payment):
+    installment = payment.installments.select_related(
+        "registration__yatra"
+    ).first()
+    return (
+        installment.registration.yatra.title
+        if installment and installment.registration and installment.registration.yatra
+        else "Yatra"
+    )
+
+
+def _payment_proof_url(payment):
+    proof = getattr(payment, "proof", None)
+    url = getattr(proof, "url", None) if proof else None
+    if not url:
+        return None
+    if url.startswith("http://") or url.startswith("https://"):
+        return url
+    public_base = getattr(settings, "PUBLIC_BACKEND_BASE_URL", "").rstrip("/")
+    return f"{public_base}{url}" if public_base else None
+
+
+def _payment_status_rows(payment):
+    """Build a complete installment status table for the user's registration."""
+    linked = list(
+        payment.installments.select_related(
+            "registration__phase",
+            "registration__yatra",
+            "installment",
+            "payment",
+        )
+    )
+    registrations = {}
+    for registration_installment in linked:
+        registrations[registration_installment.registration_id] = (
+            registration_installment.registration
+        )
+
+    rows = []
+    for registration in registrations.values():
+        if registration.phase_id:
+            installment_options = registration.phase.installments.all()
+        else:
+            installment_options = registration.yatra.installments.filter(
+                phase__isnull=True
+            )
+        submitted = {
+            item.installment_id: item
+            for item in registration.installments.select_related("payment")
+        }
+
+        for installment in installment_options:
+            item = submitted.get(installment.id)
+            payment_record = item.payment if item else None
+            if item and item.is_paid:
+                status = "Approved"
+            elif payment_record and payment_record.status == "rejected":
+                status = "Rejected"
+            elif payment_record and payment_record.proof:
+                status = "Under review"
+            elif payment_record:
+                status = "Payment started"
+            else:
+                status = "Not submitted"
+
+            rows.append({
+                "installment_name": installment.label,
+                "amount": installment.amount,
+                "proof_submitted": bool(payment_record and payment_record.proof),
+                "proof_url": _payment_proof_url(payment_record) if payment_record else None,
+                "transaction_id": payment_record.transaction_id if payment_record else None,
+                "status": status,
+            })
+    return rows
+
+
+def _payment_next_step(status, rows):
+    has_more_to_pay = any(
+        row["status"] in {"Not submitted", "Payment started"}
+        for row in rows
+    )
+    all_verified = bool(rows) and all(
+        row["status"] == "Approved" for row in rows
+    )
+
+    if status == "Submitted for review":
+        if has_more_to_pay:
+            return (
+                "This payment is under review. If you have other installments "
+                "to pay, you can proceed with them while you wait."
+            )
+        return "Please wait for confirmation for payments to be verified."
+    if status == "Approved":
+        if has_more_to_pay:
+            return "You can proceed with any remaining installments shown above."
+        if all_verified:
+            return (
+                "All your payments have been verified. Please stay updated with "
+                "further Yatra details on your dashboard."
+            )
+        return "Please stay updated with further Yatra details on your dashboard."
+    return (
+        "Please review the notes, correct the issue if needed, and submit the "
+        "payment proof again."
+    )
+
+
 def notify_payment_result(payment, approved, reviewer):
+    yatra_name = _payment_yatra_name(payment)
+    payment_rows = _payment_status_rows(payment)
+    status = "Approved" if approved else "Rejected"
     _send(
-        "Payment approved" if approved else "Payment rejected",
-        "payment_result.html",
+        f"{yatra_name}: Payment",
+        "payment_status.html",
         {
             "profile_name": _name(payment.uploaded_by),
+            "yatra_name": yatra_name,
             "transaction_id": payment.transaction_id,
             "amount": payment.total_amount,
-            "approved": approved,
-            "reviewer_name": _name(reviewer),
+            "status": status,
             "notes": payment.notes,
+            "payment_rows": payment_rows,
+            "next_step": _payment_next_step(status, payment_rows),
         },
         payment.uploaded_by,
     )

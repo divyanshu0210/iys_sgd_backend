@@ -16,6 +16,7 @@ from payment.models import *
 from helpers.notifications import (
     notify_yatra_approval_request,
     notify_yatra_eligibility_decision,
+    notify_yatra_approval_update,
 )
 from .models import YatraRegistration
 from django.db.models import (
@@ -432,6 +433,11 @@ class YatraEligibilityView(APIView):
                     transaction.on_commit(
                         lambda eligibility=eligibility: notify_yatra_eligibility_decision(
                             eligibility, True, devotee
+                        )
+                    )
+                    transaction.on_commit(
+                        lambda eligibility=eligibility: notify_yatra_approval_update(
+                            eligibility, devotee
                         )
                     )
 

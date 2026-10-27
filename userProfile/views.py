@@ -248,20 +248,15 @@ class ProfileView(APIView):
                 
                 profile.mentor = new_mentor
                 # ✅ Create or update mentor request
-                MentorRequest.objects.get_or_create(from_user=profile, to_mentor=new_mentor)
+                mentor_request, created = MentorRequest.objects.get_or_create(
+                    from_user=profile,
+                    to_mentor=new_mentor,
+                )
 
                 # ✅ Send notification email to mentor
-                if new_mentor.user.email:
-                    send_template_email(
-                        subject="New Mentee Request",
-                        template_name="mentor_request.html",
-                        context={
-                            "mentor_name": new_mentor.first_name or new_mentor.user.username,
-                            "mentee_name": profile.first_name or profile.user.username,
-                            "frontend_url": home_url,
-                        },
-                        recipient=new_mentor.user.email,
-                        fail_silently=True,
+                if created:
+                    transaction.on_commit(
+                        lambda: notify_new_profile_request(mentor_request)
                     )
 
         profile_data = request.data.copy()
