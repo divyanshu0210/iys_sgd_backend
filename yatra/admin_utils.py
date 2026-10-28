@@ -13,12 +13,21 @@ class ActiveYatraAdminMixin:
 
     admin_yatra_lookup = "yatra"
 
+    def get_changelist(self, request, **kwargs):
+        base_changelist = super().get_changelist(request, **kwargs)
+
+        class ActiveYatraChangeList(base_changelist):
+            def get_filters_params(self, params=None):
+                # Keep the UI toggle in generated links, but not DB lookups.
+                filters = super().get_filters_params(params)
+                filters.pop("show_all", None)
+                return filters
+
+        return ActiveYatraChangeList
+
     def changelist_view(self, request, extra_context=None):
-        # ``show_all`` is an admin UI toggle, not a model field lookup.
-        # Remove it before Django's ChangeList processes query parameters.
+        # Keep the toggle in request.GET so filter and pagination links retain it.
         request.show_all_yatras = request.GET.get("show_all") == "1"
-        request.GET = request.GET.copy()
-        request.GET.pop("show_all", None)
 
         extra_context = extra_context or {}
         extra_context["show_all_yatras"] = request.show_all_yatras
