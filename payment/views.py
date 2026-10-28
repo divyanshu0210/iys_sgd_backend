@@ -15,6 +15,9 @@ from yatra.models import *
 from io import BytesIO
 from django.http import HttpResponse
 import logging
+from decimal import Decimal
+from rest_framework.exceptions import PermissionDenied, ValidationError
+from userProfile.scopes import can_access_profile
 from rest_framework import status, permissions
 from django.db import connection
 from django.http import JsonResponse
@@ -30,98 +33,75 @@ class BatchPaymentProofView(APIView):
 
     @transaction.atomic
     def post(self, request, yatra_id):
-        logger.info(f"[BatchPaymentProofView] POST request by user={request.user} for yatra_id={yatra_id}")
-
         serializer = BatchPaymentProofSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
+        actor = request.user.profile
+        get_object_or_404(Yatra, pk=yatra_id)
 
-        logger.debug(f"Validated data: {data}")
+        # Validate and lock every registration before creating a payment:
+        # a bad member, installment, amount, or duplicate must reject the batch.
+        linked = []
+        seen = set()
+        total = Decimal("0")
+        for item in data["registration_installments"]:
+            profile = get_object_or_404(Profile, pk=item["profile_id"])
+            if not can_access_profile(actor, profile):
+                raise PermissionDenied("You cannot submit payment for this profile.")
+            registration = get_object_or_404(
+                YatraRegistration.objects.select_for_update(),
+                registered_for=profile, yatra_id=yatra_id,
+            )
+            if registration.status in {"cancelled", "refunded", "substituted", "attended"}:
+                raise ValidationError("Payment cannot be submitted for this registration.")
+            for label in item["installments"]:
+                key = (registration.pk, label)
+                if key in seen:
+                    raise ValidationError("An installment was selected more than once.")
+                seen.add(key)
+                inst = YatraRegistrationInstallment.objects.select_for_update(of=("self",)).select_related(
+                    "installment", "payment",
+                ).filter(
+                    registration=registration, installment__label=label,
+                    installment__yatra_id=yatra_id, installment__phase_id=registration.phase_id,
+                ).first()
+                if not inst:
+                    raise ValidationError(f"Invalid or unselected installment: {label}.")
+                if inst.is_paid:
+                    raise ValidationError(f"Installment {label} is already verified.")
+                if inst.payment and inst.payment.status != "rejected" and inst.payment.proof:
+                    raise ValidationError(f"Installment {label} already has a payment under review.")
+                linked.append(inst)
+                total += inst.installment.amount
 
-        # --- Step 1: Create or get Payment record ---
-        # payment, created = Payment.objects.get_or_create(
-        #     total_amount=data["total_amount"],
-        #     transaction_id=data["transaction_id"],
-        #     uploaded_by=request.user.profile,
-        # )
+        if not linked:
+            raise ValidationError("Select at least one installment.")
+        if data["total_amount"] != total:
+            raise ValidationError("The payment amount must match the selected installments.")
+
         try:
-            payment = Payment.objects.create(
-                transaction_id=data["transaction_id"],
-                total_amount=data["total_amount"],
-                uploaded_by=request.user.profile,
-            )
-            logger.info(f"Created new Payment: id={payment.id}, txn={payment.transaction_id}, amount={payment.total_amount}")
-
+            with transaction.atomic():
+                payment = Payment.objects.create(
+                    transaction_id=data["transaction_id"],
+                    total_amount=total,
+                    uploaded_by=actor,
+                )
         except IntegrityError:
-            return Response(
-                {
-                    "error": "This transaction ID has already been used."
-                },
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            raise ValidationError({"transaction_id": "This transaction ID has already been used."})
 
-        # if created:
-        # else:
-        #     logger.warning(f"Reused existing Payment: id={payment.id}, txn={payment.transaction_id}")
-
-        linked_count = 0
-
-        # --- Step 2: Iterate through each registration group ---
-        for reg_item in data["registration_installments"]:
-            profile_id = reg_item["profile_id"]
-            installment_labels = reg_item["installments"]
-            logger.debug(f"Processing profile_id={profile_id} with installments={installment_labels}")
-
-            # ✅ Fetch the Profile instance first
-            try:
-                profile = Profile.objects.get(id=profile_id)
-            except Profile.DoesNotExist:
-                logger.error(f"Profile not found for id={profile_id}, skipping.")
-                continue
-
-            # ✅ Then fetch registration for this profile and yatra
-            try:
-                registration = YatraRegistration.objects.get(
-                    registered_for=profile,
-                    yatra_id=yatra_id
-                )
-            except YatraRegistration.DoesNotExist:
-                logger.error(f"No registration found for profile={profile_id} and yatra={yatra_id}, skipping.")
-                continue
-
-            # ✅ Fetch installments matching the given labels
-            installments = YatraInstallment.objects.filter(
-                yatra_id=yatra_id,
-                label__in=installment_labels,
-                phase=registration.phase if registration.phase_id else None,
-            )
-            if not installments.exists():
-                logger.warning(f"No matching installments found for labels={installment_labels} in yatra={yatra_id}")
-                continue
-
-            for inst in installments:
-                reg_inst, created = YatraRegistrationInstallment.objects.get_or_create(
-                    registration=registration,
-                    installment=inst,
-                )
-                reg_inst.payment = payment
-                reg_inst.verified_by = None
-                reg_inst.verified_at = None
-                reg_inst.save()
-                reg_inst.registration.update_status()
-                linked_count += 1
-                logger.info(
-                    f"Linked installment '{inst.label}' (₹{inst.amount}) "
-                    f"to registration={registration.id}, payment={payment.id}"
-                )
-
-        logger.info(f"Finished linking {linked_count} installments to Payment {payment.id}")
+        for inst in linked:
+            inst.payment = payment
+            inst.verified_by = None
+            inst.verified_at = None
+            inst.save(update_fields=["payment", "verified_by", "verified_at"])
+        for registration in {inst.registration for inst in linked}:
+            registration.update_status()
 
         return Response({
             "payment_id": str(payment.id),
-            "linked_installments": linked_count,
-            "message": f"✅ Payment entry created and linked to {linked_count} installments successfully. Please upload proof next."
-        }, status=status.HTTP_201_CREATED)  
+            "linked_installments": len(linked),
+            "message": f"Payment entry created and linked to {len(linked)} installments. Please upload proof next.",
+        }, status=status.HTTP_201_CREATED)
     
 
 class UploadPaymentScreenshotView(APIView):
@@ -133,6 +113,9 @@ class UploadPaymentScreenshotView(APIView):
 
     def post(self, request, payment_id):
         payment = get_object_or_404(Payment, id=payment_id, uploaded_by=request.user.profile)
+
+        if payment.status != "under_review":
+            return Response({"error": "This payment can no longer be changed."}, status=400)
 
         file = request.FILES.get("screenshot")
         if not file:

@@ -18,7 +18,9 @@ class SubstitutionRequest(models.Model):
     initiator = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="substitution_sent")
     target_profile = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="substitution_received")
     status = models.CharField(max_length=16, choices=STATUS_CHOICES, default="pending")
-    two_digit_code = models.CharField(max_length=4)  # stored server-side (can be hashed for extra safety)
+    # The field name is retained for API compatibility with existing requests.
+    two_digit_code = models.CharField(max_length=6)
+    failed_code_attempts = models.PositiveSmallIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField(null=True, blank=True)
     accepted_at = models.DateTimeField(null=True, blank=True)

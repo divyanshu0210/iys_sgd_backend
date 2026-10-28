@@ -19,9 +19,10 @@ class SubstitutionRequestSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = SubstitutionRequest
-        fields = "__all__"
+        # Never return the shared secret to the recipient listing requests.
+        exclude = ("two_digit_code", "failed_code_attempts")
         read_only_fields = (
-            "two_digit_code", "created_at", "status", "amount_paid",
+            "created_at", "status", "amount_paid",
             "accepted_at", "expires_at"
         )
 

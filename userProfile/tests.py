@@ -223,3 +223,14 @@ class ProfilePictureReplacementTests(TestCase):
             response = self.upload()
         self.assertEqual(response.status_code, 200)
         self.assertTrue(self.storage.exists(self.old_name))
+
+    def test_photo_reader_rejects_urls_and_unrelated_users(self):
+        response = self.client.get("/api/proxy-image/", {"url": "http://127.0.0.1/"})
+        self.assertEqual(response.status_code, 400)
+        response = self.client.get("/api/proxy-image/", {"profile_id": str(self.profile.pk)})
+        self.assertEqual(response.status_code, 200)
+        other_user = User.objects.create_user(username="photo-viewer")
+        Profile.objects.create(user=other_user)
+        self.client.force_authenticate(other_user)
+        response = self.client.get("/api/proxy-image/", {"profile_id": str(self.profile.pk)})
+        self.assertEqual(response.status_code, 403)

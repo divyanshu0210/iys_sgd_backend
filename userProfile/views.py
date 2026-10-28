@@ -6,6 +6,7 @@ from .serializers import *
 from django.shortcuts import get_object_or_404
 from rest_framework.permissions import IsAdminUser, AllowAny, IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+from rest_framework.decorators import api_view, permission_classes
 from helpers.mail import send_template_email
 from userProfile.notifications import (
     notify_new_profile_request,
@@ -17,7 +18,7 @@ from django.utils import timezone
 from django.db import transaction
 from django.db.models.functions import Lower
 import logging
-from userProfile.scopes import profiles_for_reviewer, reviewer_request_scope, reviewers_for_profile
+from userProfile.scopes import can_access_profile, profiles_for_reviewer, reviewer_request_scope, reviewers_for_profile
 from userProfile.utils import resolve_bace_for_center
 
 # models.py
@@ -407,19 +408,30 @@ class MentorRequestView(APIView):
 
 # api/views.py
 import base64
-import requests
-from django.http import JsonResponse
 
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def proxy_image(request):
-    url = request.GET.get("url")
-    if not url:
-        return JsonResponse({"error": "Missing URL"}, status=400)
-
+    """Read an authorized profile's stored photo without fetching arbitrary URLs."""
+    from uuid import UUID
     try:
-        r = requests.get(url)
-        encoded = base64.b64encode(r.content).decode()
-        return JsonResponse({"base64": encoded})
-    except:
-        return JsonResponse({"error": "Fetch Failed"}, status=400)
+        profile_id = UUID(request.query_params.get("profile_id", ""))
+    except (ValueError, TypeError, AttributeError):
+        return Response({"error": "A valid profile_id is required."}, status=400)
+    profile = get_object_or_404(Profile, pk=profile_id)
+    if not can_access_profile(request.user.profile, profile):
+        return Response({"error": "You cannot access this profile photo."}, status=403)
+    if not profile.profile_picture:
+        return Response({"error": "No profile photo found."}, status=404)
+    try:
+        # Bound reads even for older images that predate the upload size limit.
+        with profile.profile_picture.open("rb") as image:
+            content = image.read(5 * 1024 * 1024 + 1)
+        if len(content) > 5 * 1024 * 1024:
+            return Response({"error": "Profile photo is too large."}, status=400)
+        return Response({"base64": base64.b64encode(content).decode("ascii")})
+    except Exception:
+        logger.exception("Could not read profile picture for profile %s", profile.pk)
+        return Response({"error": "Unable to read profile photo."}, status=502)
 
 

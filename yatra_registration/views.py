@@ -12,7 +12,7 @@ from .models import *
 from userProfile.serializers import *
 from .serializers import *
 from userProfile.models import *
-from userProfile.scopes import profiles_for_reviewer, reviewers_for_profile
+from userProfile.scopes import can_access_profile, profiles_for_reviewer, reviewers_for_profile
 from payment.models import *
 from yatra_registration.notifications import (
     notify_yatra_approval_request,
@@ -711,6 +711,7 @@ class YatraRegistrationView(APIView):
             except Exception as e:
                 raise
 
+    @transaction.atomic
     def post(self, request, yatra_id):
         """
         Create or update registrations for multiple profiles in one request.
@@ -727,7 +728,11 @@ class YatraRegistrationView(APIView):
             ...
         }
         """
-        yatra = get_object_or_404(Yatra, id=yatra_id)
+        # Lock the Yatra while checking capacity so concurrent registrations
+        # cannot both take the final place.
+        yatra = get_object_or_404(Yatra.objects.select_for_update(), id=yatra_id)
+        if yatra.close_yatra:
+            return Response({'error': 'This Yatra is closed.'}, status=400)
         registrant = request.user.profile
         registrations_data = request.data  # dict of profile_id -> registration info
 
@@ -749,6 +754,11 @@ class YatraRegistrationView(APIView):
                 errors.append(f'Invalid profile ID: {profile_id}')
                 continue
 
+            # Access is required even for Yatras that don't require approval.
+            if not can_access_profile(registrant, profile):
+                errors.append(f'You cannot register {profile} for this Yatra')
+                continue
+
             existing_registration = (
                 YatraRegistration.objects
                 .filter(yatra=yatra, registered_for=profile)
@@ -757,7 +767,22 @@ class YatraRegistrationView(APIView):
             )
             registration_phase = phase_for_registration(yatra, existing_registration)
             if existing_registration is None:
+                if not yatra.is_registration_open or yatra.close_yatra:
+                    errors.append('Registration is closed for this Yatra.')
+                    continue
+                if yatra.registration_phases.exists() and not active_registration_phase(yatra):
+                    errors.append('There is no active registration phase for this Yatra.')
+                    continue
+                active_count = YatraRegistration.objects.filter(yatra=yatra).exclude(
+                    status__in=['cancelled', 'refunded', 'substituted']
+                ).count()
+                if active_count >= yatra.capacity:
+                    errors.append('This Yatra is at full capacity.')
+                    continue
                 registration_phase = active_registration_phase(yatra)
+            elif existing_registration.status in {'cancelled', 'refunded', 'substituted', 'attended'}:
+                errors.append(f'Registration for {profile} can no longer be changed.')
+                continue
 
             if (
                 existing_registration
@@ -782,7 +807,6 @@ class YatraRegistrationView(APIView):
             # --- Extract fields ---
             form_fields = reg_data.get('form_fields', {})
             installments_selected = reg_data.get('installments_selected', [])
-            installments_details = reg_data.get('installments_details', [])
 
             invalid_phase_installments = [
                 label for label in installments_selected if label not in valid_installments
@@ -880,11 +904,8 @@ class YatraRegistrationView(APIView):
                     installment=installment
                 )
 
-                # Update payment-related details if provided
-                matching_detail = next((i for i in installments_details if i['label'] == inst_label), None)
-                if matching_detail:
-                    reg_inst.is_paid = matching_detail.get('is_paid', reg_inst.is_paid)
-                    reg_inst.save()
+                # Payment verification is set only by the payment review flow;
+                # client-supplied installment details cannot mark it paid.
 
             created_or_updated.append(registration)
 
@@ -908,6 +929,8 @@ class YatraRegistrationView(APIView):
             return Response({"error": "profile_id is required"}, status=400)
 
         yatra = get_object_or_404(Yatra, id=yatra_id)
+        if not yatra.is_cancellation_open or yatra.close_yatra:
+            return Response({"error": "Cancellation is closed for this Yatra."}, status=400)
         profile = get_object_or_404(Profile, id=profile_id)
         requester = request.user.profile
 
@@ -1014,6 +1037,9 @@ class YatraRegistrationDetailView(APIView):
     """
 
     def get(self, request, yatra_id, profile_id):
+        profile = get_object_or_404(Profile, id=profile_id)
+        if not can_access_profile(request.user.profile, profile):
+            return Response({"detail": "You cannot view this registration."}, status=403)
         try:
             registration = YatraRegistration.objects.get(
                 yatra_id=yatra_id,
@@ -1067,6 +1093,10 @@ class TrackRCSDownloadAPIView(APIView):
             YatraRegistration,
             id=registration_id
         )
+        if not can_access_profile(request.user.profile, registration.registered_for):
+            return Response({"detail": "You cannot access this registration."}, status=403)
+        if not registration.yatra.is_rcs_download_open or registration.yatra.close_yatra:
+            return Response({"detail": "RCS downloads are closed for this Yatra."}, status=400)
         event, created = RCSDownloadEvent.objects.get_or_create(
             registration=registration
         )

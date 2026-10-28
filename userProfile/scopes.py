@@ -65,3 +65,8 @@ def profiles_for_reviewer(reviewer):
         reviewer_profile_scope(reviewer),
         profile_verification_status="verified",
     ).values_list("id", flat=True).distinct()
+
+
+def can_access_profile(actor, profile):
+    """Allow a person to act for themselves or a currently scoped profile."""
+    return actor.pk == profile.pk or profiles_for_reviewer(actor).filter(pk=profile.pk).exists()

@@ -6,8 +6,8 @@ from django.test import SimpleTestCase, TestCase
 from rest_framework.test import APIClient
 
 from userProfile.models import Bace, Profile
-from yatra.models import Yatra
-from yatra_registration.models import YatraEligibility
+from yatra.models import RegistrationPolicy, Yatra, YatraInstallment
+from yatra_registration.models import YatraEligibility, YatraRegistration, YatraRegistrationInstallment
 from yatra_registration.notifications import notify_yatra_approval_update
 
 
@@ -115,4 +115,66 @@ class YatraEligibilityDecisionTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("has no eligibility record", response.data["errors"][0])
         self.assertFalse(YatraEligibility.objects.filter(yatra=self.yatra, profile=self.profile).exists())
+
+
+class RegistrationSecurityTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="registration-owner")
+        self.other_user = User.objects.create_user(username="registration-other")
+        self.profile = Profile.objects.create(user=self.user, first_name="Owner", profile_verification_status="verified")
+        self.other = Profile.objects.create(user=self.other_user, first_name="Other", profile_verification_status="verified")
+        self.yatra = Yatra.objects.create(
+            title="Security Yatra", description="Test", start_date=date(2027, 1, 1),
+            end_date=date(2027, 1, 2), location="Test", capacity=2,
+        )
+        RegistrationPolicy.objects.create(yatra=self.yatra, requires_approval=False)
+        self.installment = YatraInstallment.objects.create(yatra=self.yatra, label="First", amount="100.00")
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+        self.url = f"/yatras/{self.yatra.pk}/register/"
+
+    def payload(self, profile):
+        return {str(profile.pk): {
+            "form_fields": {}, "installments_selected": ["First"],
+            "installments_details": [{"label": "First", "is_paid": True}],
+        }}
+
+    def test_client_cannot_mark_installment_paid(self):
+        response = self.client.post(self.url, self.payload(self.profile), format="json")
+        self.assertEqual(response.status_code, 200)
+        installment = YatraRegistrationInstallment.objects.get(registration__registered_for=self.profile)
+        self.assertFalse(installment.is_paid)
+        self.assertIsNone(installment.verified_by)
+
+    def test_open_yatra_does_not_allow_registering_unrelated_profile(self):
+        response = self.client.post(self.url, self.payload(self.other), format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(YatraRegistration.objects.filter(registered_for=self.other).exists())
+
+    def test_registration_details_are_not_visible_to_unrelated_user(self):
+        YatraRegistration.objects.create(yatra=self.yatra, registered_for=self.other, registered_by=self.other, form_data={"private": "value"})
+        response = self.client.get(f"/yatras/{self.yatra.pk}/{self.other.pk}/registrations/")
+        self.assertEqual(response.status_code, 403)
+
+    def test_current_mentor_can_view_scoped_registration(self):
+        self.other.mentor = self.profile
+        self.other.save(update_fields=["mentor"])
+        YatraRegistration.objects.create(yatra=self.yatra, registered_for=self.other, registered_by=self.other)
+        response = self.client.get(f"/yatras/{self.yatra.pk}/{self.other.pk}/registrations/")
+        self.assertEqual(response.status_code, 200)
+
+    def test_closed_or_full_yatra_rejects_new_registration(self):
+        self.yatra.is_registration_open = False
+        self.yatra.save(update_fields=["is_registration_open"])
+        self.assertEqual(self.client.post(self.url, self.payload(self.profile), format="json").status_code, 400)
+        self.yatra.is_registration_open = True
+        self.yatra.capacity = 0
+        self.yatra.save(update_fields=["is_registration_open", "capacity"])
+        self.assertEqual(self.client.post(self.url, self.payload(self.profile), format="json").status_code, 400)
+
+    def test_cancellation_flag_is_enforced(self):
+        YatraRegistration.objects.create(yatra=self.yatra, registered_for=self.profile, registered_by=self.profile)
+        response = self.client.delete(self.url, {"profile_id": str(self.profile.pk)}, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(YatraRegistration.objects.filter(registered_for=self.profile).exists())
 

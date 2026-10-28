@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from decimal import Decimal
 from .models import *
 from yatra.models import *
 from rest_framework import serializers
@@ -34,12 +35,12 @@ import json
 
 class RegistrationInstallmentSerializer(serializers.Serializer):
     profile_id = serializers.UUIDField()
-    installments = serializers.ListField(child=serializers.CharField())
+    installments = serializers.ListField(child=serializers.CharField(), allow_empty=False)
 
 class BatchPaymentProofSerializer(serializers.Serializer):
-    registration_installments = RegistrationInstallmentSerializer(many=True)
+    registration_installments = RegistrationInstallmentSerializer(many=True, allow_empty=False)
     transaction_id = serializers.CharField(required=True)
-    total_amount = serializers.DecimalField(max_digits=10, decimal_places=2)
+    total_amount = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=Decimal("0.01"))
 
     def to_internal_value(self, data):
         data = data.copy()
