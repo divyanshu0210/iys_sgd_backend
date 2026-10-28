@@ -9,7 +9,7 @@ from django.utils import timezone
 from django import forms
 from django.contrib import admin
 from django.urls import reverse
-from django.utils.html import format_html
+from django.utils.html import format_html, format_html_join
 from django.db.models import Prefetch
 from django.contrib.admin import SimpleListFilter
 from yatra.admin_utils import ActiveYatraAdminMixin
@@ -300,22 +300,33 @@ class YatraRegistrationAdmin(ActiveYatraAdminMixin, admin.ModelAdmin):
 #──────────────────────────────────────────────────────────────
 #other amount and installment methods
     # Clean display methods (no colors, no HTML)
+    def _phase_installments(self, obj):
+        # The prefetched set contains every phase; only show this registration's.
+        installments = getattr(obj.yatra, '_pref_yatra_installments', None)
+        if installments is None:
+            installments = obj.yatra.installments.all()
+        return [inst for inst in installments if inst.phase_id == obj.phase_id]
+
     def total_amount_display(self, obj):
-        return f"₹{sum(i.amount for i in getattr(obj.yatra, '_pref_yatra_installments', []))}"  
+        return f"₹{sum(i.amount for i in self._phase_installments(obj))}"
     
     total_amount_display.short_description = "Total Amount"
-    total_amount_display.admin_order_field = 'total_amount'
 
     def paid_amount_display(self, obj):
-        return f"₹{sum(i.installment.amount for i in getattr(obj, '_pref_installments', []) if i.is_paid)}"
+        records = getattr(obj, '_pref_installments', None)
+        if records is None:
+            records = obj.installments.select_related('installment')
+        return f"₹{sum(i.installment.amount for i in records if i.is_paid and i.installment and i.installment.yatra_id == obj.yatra_id and i.installment.phase_id == obj.phase_id)}"
     paid_amount_display.short_description = "Paid"
-    paid_amount_display.admin_order_field = 'paid_amount'
 
     @admin.display(description="Installment Status")
     def installments_status(self, obj):
         def compute():
-            yatra_installments = getattr(obj.yatra, '_pref_yatra_installments', [])
-            reg_installments = {ri.installment_id: ri for ri in getattr(obj, '_pref_installments', [])}
+            yatra_installments = self._phase_installments(obj)
+            records = getattr(obj, '_pref_installments', None)
+            if records is None:
+                records = obj.installments.select_related('installment', 'payment')
+            reg_installments = {ri.installment_id: ri for ri in records}
 
             items = []
             for inst in yatra_installments:
@@ -333,7 +344,7 @@ class YatraRegistrationAdmin(ActiveYatraAdminMixin, admin.ModelAdmin):
 
                 items.append(f"{inst.label} ({status})")
 
-            return format_html("<br>".join(items)) if items else "No installments defined"
+            return format_html_join(format_html("<br>"), "{}", ((item,) for item in items)) if items else "No installments defined"
 
         return self._cache(obj, 'installments', compute)
 
@@ -486,6 +497,7 @@ class YatraRegistrationAdmin(ActiveYatraAdminMixin, admin.ModelAdmin):
 
         return qs.select_related(
             'yatra',
+            'phase',
             'registered_for',
             'registered_for__mentor',
             'registered_by',
@@ -498,7 +510,7 @@ class YatraRegistrationAdmin(ActiveYatraAdminMixin, admin.ModelAdmin):
             
             Prefetch(
                 'installments',
-                queryset=YatraRegistrationInstallment.objects.select_related('installment'),
+                queryset=YatraRegistrationInstallment.objects.select_related('installment', 'payment'),
                 to_attr='_pref_installments',
             ),
             Prefetch(

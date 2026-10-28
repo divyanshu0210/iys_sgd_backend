@@ -6,9 +6,74 @@ from django.test import SimpleTestCase, TestCase
 from rest_framework.test import APIClient
 
 from userProfile.models import Bace, Profile
-from yatra.models import RegistrationPolicy, Yatra, YatraInstallment
+from yatra.models import RegistrationPhase, RegistrationPolicy, Yatra, YatraInstallment
 from yatra_registration.models import YatraEligibility, YatraRegistration, YatraRegistrationInstallment
 from yatra_registration.notifications import notify_yatra_approval_update
+
+
+class RegistrationPhaseAlignmentTests(TestCase):
+    def setUp(self):
+        user = User.objects.create_user(username="phase-test")
+        self.profile = Profile.objects.create(user=user, first_name="Phase")
+        self.yatra = Yatra.objects.create(
+            title="Phase Yatra", description="Test", start_date=date(2027, 1, 1),
+            end_date=date(2027, 1, 2), location="Test", capacity=10,
+        )
+        self.phase = RegistrationPhase.objects.create(yatra=self.yatra, name="One", start_date=date(2026, 1, 1))
+        other_phase = RegistrationPhase.objects.create(yatra=self.yatra, name="Two", start_date=date(2026, 2, 1))
+        self.first = YatraInstallment.objects.create(yatra=self.yatra, phase=self.phase, label="First", amount=3500)
+        self.second = YatraInstallment.objects.create(yatra=self.yatra, phase=self.phase, label="Second", amount=3000)
+        self.other = YatraInstallment.objects.create(yatra=self.yatra, phase=other_phase, label="Other phase", amount=5500)
+        self.legacy = YatraInstallment.objects.create(yatra=self.yatra, label="Legacy", amount=400)
+        self.registration = YatraRegistration.objects.create(
+            yatra=self.yatra, phase=self.phase, registered_by=self.profile, registered_for=self.profile,
+        )
+
+    def test_admin_and_status_exclude_other_phases(self):
+        YatraRegistrationInstallment.objects.create(registration=self.registration, installment=self.first, is_paid=True)
+        YatraRegistrationInstallment.objects.create(registration=self.registration, installment=self.other, is_paid=True)
+        self.registration.update_status()
+        self.assertEqual(self.registration.total_amount, 6500)
+        self.assertEqual(self.registration.paid_amount, 3500)
+        self.assertEqual(self.registration.status, 'partial')
+        from django.apps import apps
+        if apps.is_installed('django.contrib.admin'):
+            from django.contrib import admin
+            from yatra_registration.admin import YatraRegistrationAdmin
+            admin_view = YatraRegistrationAdmin(YatraRegistration, admin.site)
+            self.assertEqual(admin_view.total_amount_display(self.registration), '₹6500.00')
+            self.assertEqual(admin_view.paid_amount_display(self.registration), '₹3500.00')
+            display = str(admin_view.installments_status(self.registration))
+            self.assertIn('First (Paid)', display)
+            self.assertIn('Second (Due)', display)
+            self.assertNotIn('Other phase', display)
+            self.assertNotIn('Legacy', display)
+        YatraRegistrationInstallment.objects.create(registration=self.registration, installment=self.second, is_paid=True)
+        self.registration.update_status()
+        self.assertEqual(self.registration.status, 'paid')
+
+    def test_legacy_registration_and_email_use_only_legacy_installments(self):
+        from payment.models import Payment
+        from payment.notifications import _payment_status_rows
+
+        self.registration.phase = None
+        self.registration.save()
+        payment = Payment.objects.create(transaction_id='phase-test', total_amount=400, uploaded_by=self.profile)
+        YatraRegistrationInstallment.objects.create(registration=self.registration, installment=self.legacy, payment=payment)
+        YatraRegistrationInstallment.objects.create(registration=self.registration, installment=self.first, is_paid=True)
+        self.registration.update_status()
+        self.assertEqual(self.registration.total_amount, 400)
+        self.assertEqual(self.registration.paid_amount, 0)
+        self.assertEqual(self.registration.status, 'partial')
+        self.assertEqual([row['installment_name'] for row in _payment_status_rows(payment)], ['Legacy'])
+
+    def test_phase_payment_email_excludes_other_phase(self):
+        from payment.models import Payment
+        from payment.notifications import _payment_status_rows
+
+        payment = Payment.objects.create(transaction_id='phase-email', total_amount=3500, uploaded_by=self.profile)
+        YatraRegistrationInstallment.objects.create(registration=self.registration, installment=self.first, payment=payment)
+        self.assertEqual([row['installment_name'] for row in _payment_status_rows(payment)], ['First', 'Second'])
 
 
 class YatraReviewerBatchNotificationTests(SimpleTestCase):

@@ -601,8 +601,12 @@ class YatraRegistrationView(APIView):
                         inst_map = {i.installment_id: i for i in reg_installments}
 
                         paid, pending = [], []
-                        for inst in reg_installments:
-                            (paid if inst.is_paid else pending).append(inst.installment.label)
+                        # A stale record from another phase must not appear in
+                        # this phase's paid/pending lists.
+                        for inst in profile_installments:
+                            record = inst_map.get(inst.id)
+                            if record:
+                                (paid if record.is_paid else pending).append(inst.label)
 
                         for inst in profile_installments:
                             if inst.label not in paid and inst.label not in pending:
@@ -821,7 +825,10 @@ class YatraRegistrationView(APIView):
             existing_labels = set()
             if existing_registration:
                 existing_labels = set(
-                    existing_registration.installments.values_list(
+                    existing_registration.installments.filter(
+                        installment__yatra=yatra,
+                        installment__phase=registration_phase,
+                    ).values_list(
                         'installment__label', flat=True
                     )
                 )
@@ -883,10 +890,6 @@ class YatraRegistrationView(APIView):
                 registration.save()
 
             # --- Handle installments ---
-            existing_labels = set(
-                registration.installments.values_list('installment__label', flat=True)
-            )
-
             for inst_label in installments_selected:
                 try:
                     # Use the phase-scoped map validated above. Labels may

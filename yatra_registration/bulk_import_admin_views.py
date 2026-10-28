@@ -2,6 +2,7 @@
 from django.shortcuts import get_object_or_404, redirect, render
 from django.contrib import messages
 from django.db import transaction
+from django.db.models import Q
 from django.urls import reverse
 from django.utils import timezone
 from yatra.models import Yatra
@@ -29,6 +30,7 @@ def normalize_mobile(value):
     return value
 
 def yatra_bulk_offline_import(request, yatra_id):
+    from yatra_registration.views import phase_for_registration
     print("=== Starting yatra_bulk_offline_import ===")
     yatra = get_object_or_404(Yatra, id=yatra_id)
     print(f"Yatra: {yatra.title} (ID: {yatra.id})")
@@ -104,7 +106,15 @@ def yatra_bulk_offline_import(request, yatra_id):
 
                 target_installments = []
                 total_amount = 0
-                all_installments = list(yatra.installments.all().order_by('amount'))
+                existing_reg = YatraRegistration.objects.filter(
+                    yatra=yatra, registered_for=profile
+                ).first()
+                phase = phase_for_registration(yatra, existing_reg)
+                if not existing_reg and yatra.registration_phases.exists() and not phase:
+                    missing_profiles.append(str(profile_id))
+                    continue
+                # Never mix amounts from different phases during offline import.
+                all_installments = list(yatra.installments.filter(phase=phase).order_by('amount'))
                 if payment_type == "3000 Advance":
                     total_amount = 3000
                     for inst in all_installments:
@@ -120,7 +130,11 @@ def yatra_bulk_offline_import(request, yatra_id):
 
                 print(f"Target installments: {[inst.label for inst in target_installments]}")
 
-                if not drive_url or not target_installments:
+                if (not drive_url or not target_installments
+                        or sum(inst.amount for inst in target_installments) != total_amount
+                        or (existing_reg and existing_reg.installments.filter(
+                            installment__in=target_installments
+                        ).filter(Q(is_paid=True) | Q(payment__isnull=False)).exists())):
                     missing_profiles.append(str(profile_id))
                     print(f"Missing data for profile {profile_id}. Skipping...")
                     continue
@@ -138,9 +152,10 @@ def yatra_bulk_offline_import(request, yatra_id):
                 # Create registration
                 reg, _ = YatraRegistration.objects.get_or_create(
                     yatra=yatra, registered_for=profile,
-                    defaults={'registered_by': request.user.profile}
+                    defaults={'registered_by': request.user.profile, 'phase': phase}
                 )
                 reg.registered_by = request.user.profile
+                reg.phase = phase
                 reg.save()
                 print(f"Registration saved for profile {profile_id}")
 
@@ -174,7 +189,7 @@ def yatra_bulk_offline_import(request, yatra_id):
             print(f"Finished processing selected profiles. Success count: {success_count}, Missing: {missing_profiles}")
 
             if missing_profiles:
-                messages.warning(request, f"Skipped {len(missing_profiles)} profiles (missing URL or payment info).")
+                messages.warning(request, f"Skipped {len(missing_profiles)} profiles (missing proof, no matching phase installments, or an installment already has a payment).")
             else:
                 if 'offline_import_excel_map' in request.session:
                     del request.session['offline_import_excel_map']

@@ -78,7 +78,7 @@ class YatraRegistration(models.Model):
 
     @property
     def total_amount(self):
-        """Total amount for all installments of this yatra"""
+        """Total for the registration's phase (or legacy installments)."""
         installments = (
             self.phase.installments.all()
             if self.phase_id
@@ -88,13 +88,21 @@ class YatraRegistration(models.Model):
 
     @property
     def paid_amount(self):
-        """Sum of all verified payments"""
+        """Sum verified installments belonging to this registration's phase."""
         return sum(
-            inst.installment.amount for inst in self.installments.filter(is_paid=True)
+            inst.installment.amount for inst in self.phase_installment_records().filter(is_paid=True)
+        )
+
+    def phase_installment_records(self):
+        # Ignore stale records from other phases, including phase-less records
+        # on a phase-based registration and vice versa.
+        return self.installments.filter(
+            installment__yatra_id=self.yatra_id,
+            installment__phase_id=self.phase_id,
         )
     
     def has_any_installment_under_verification(self):
-        return self.installments.filter(
+        return self.phase_installment_records().filter(
             payment__isnull=False,
             is_paid=False
         ).exists()
@@ -111,12 +119,13 @@ class YatraRegistration(models.Model):
             else self.yatra.installments.filter(phase__isnull=True).count()
         )
 
-        paid_installments = self.installments.filter(is_paid=True).count()
-        initiated_installments = self.installments.filter(payment__isnull=False).count()
-        if initiated_installments == 0:
-            self.status = 'pending'
-        elif paid_installments == total_installments:
+        records = self.phase_installment_records()
+        paid_installments = records.filter(is_paid=True).count()
+        initiated_installments = records.filter(payment__isnull=False).count()
+        if total_installments and paid_installments == total_installments:
             self.status = 'paid'
+        elif initiated_installments == 0 and paid_installments == 0:
+            self.status = 'pending'
         else:
             self.status = 'partial'
         self.save()
