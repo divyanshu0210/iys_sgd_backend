@@ -1,7 +1,12 @@
 from unittest.mock import patch
+from io import BytesIO
 
 from django.contrib.auth.models import User
+from django.core.files.base import ContentFile
+from django.core.files.storage import InMemoryStorage
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
+from PIL import Image
 from rest_framework.test import APIClient
 
 from userProfile.notifications import _summary_groups_for_reviewer, notify_profile_review_batch
@@ -160,3 +165,61 @@ class ProfileReviewBatchTests(TestCase):
         self.second.refresh_from_db()
         self.assertEqual(self.first.profile_verification_status, "rejected")
         self.assertEqual(self.second.profile_verification_status, "rejected")
+
+
+class ProfilePictureReplacementTests(TestCase):
+    def setUp(self):
+        self.storage = InMemoryStorage()
+        field = Profile._meta.get_field("profile_picture")
+        self.storage_patch = patch.object(field, "storage", self.storage)
+        self.storage_patch.start()
+        self.addCleanup(self.storage_patch.stop)
+        user = User.objects.create_user(username="photo-user")
+        self.profile = Profile.objects.create(
+            user=user, center="Photo Test Bace", profile_verification_status="verified",
+        )
+        Bace.objects.create(name="Photo Test Bace")
+        image = BytesIO()
+        Image.new("RGB", (2, 2), color="red").save(image, format="PNG")
+        self.image_bytes = image.getvalue()
+        self.profile.profile_picture.save("photo.png", ContentFile(self.image_bytes), save=True)
+        self.old_name = self.profile.profile_picture.name
+        self.client = APIClient()
+        self.client.force_authenticate(user)
+
+    def upload(self, content=None):
+        return self.client.post("/api/profile/", {
+            "profile_picture": SimpleUploadedFile(
+                "photo.png", self.image_bytes if content is None else content,
+                content_type="image/png",
+            ),
+        }, format="multipart")
+
+    def test_replacement_deletes_old_file_after_commit(self):
+        with self.captureOnCommitCallbacks(execute=False) as callbacks:
+            response = self.upload()
+        self.assertEqual(response.status_code, 200)
+        self.profile.refresh_from_db()
+        self.assertNotEqual(self.old_name, self.profile.profile_picture.name)
+        self.assertTrue(self.storage.exists(self.old_name))
+        self.assertTrue(self.storage.exists(self.profile.profile_picture.name))
+        for callback in callbacks:
+            callback()
+        self.assertFalse(self.storage.exists(self.old_name))
+        self.assertTrue(self.storage.exists(self.profile.profile_picture.name))
+
+    def test_invalid_upload_keeps_old_file(self):
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.upload(b"not an image")
+        self.assertEqual(response.status_code, 400)
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.profile_picture.name, self.old_name)
+        self.assertTrue(self.storage.exists(self.old_name))
+
+    def test_shared_old_file_is_not_deleted(self):
+        other_user = User.objects.create_user(username="other-photo-user")
+        Profile.objects.create(user=other_user, profile_picture=self.old_name)
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.upload()
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(self.storage.exists(self.old_name))

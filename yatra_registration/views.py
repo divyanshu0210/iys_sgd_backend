@@ -295,10 +295,11 @@ class YatraEligibilityView(APIView):
                 eligibility, created = YatraEligibility.objects.get_or_create(
                     yatra=yatra,
                     profile=devotee,
-                    defaults={'approved_by': mentor, 'is_approved': False}
+                    defaults={
+                        'approved_by': mentor,
+                        'is_approved': False,
+                    },
                 )
-                eligibility.save()
-
                 if created:
                     transaction.on_commit(
                         lambda: notify_yatra_approval_request(eligibility)
@@ -340,15 +341,6 @@ class YatraEligibilityView(APIView):
                 errors.append(f'{profile.full_name() or profile.user.username} is not in a Center managed by you')
                 continue
 
-            # Get or create eligibility
-            eligibility, created = YatraEligibility.objects.get_or_create(
-                yatra=yatra,
-                profile=profile,
-                defaults={'approved_by': devotee, 'is_approved': False}
-            )
-
-            
-
             # === 4. UNAPPROVE: BLOCK IF ALREADY REGISTERED ===
             if action == 'unapprove':
                 eligibility = YatraEligibility.objects.filter(
@@ -357,7 +349,7 @@ class YatraEligibilityView(APIView):
                 ).first()
 
                 if not eligibility:
-                    errors.append(f'{profile.get_full_name()} has no eligibility record to unapprove')
+                    errors.append(f'{profile.full_name() or profile.user.username} has no eligibility record to unapprove')
                     continue
                 if YatraRegistration.objects.filter(
                     yatra=yatra,
@@ -374,8 +366,6 @@ class YatraEligibilityView(APIView):
                     errors.append(f'{profile.first_name} is already not approved')
                     continue
                 eligibility.delete()
-                # This is an existing eligibility record, so notify the user
-                # and reviewers that the approval was withdrawn.
                 user_decision_eligibilities.append(eligibility)
                 reviewer_update_eligibilities.append(eligibility)
                 updated.append({
@@ -386,6 +376,14 @@ class YatraEligibilityView(APIView):
                 continue
 
             if action == 'approve':
+                eligibility, created = YatraEligibility.objects.get_or_create(
+                    yatra=yatra,
+                    profile=profile,
+                    defaults={
+                        'approved_by': devotee,
+                        'is_approved': False,
+                    },
+                )
                 was_approved = eligibility.is_approved
                 eligibility.is_approved = True
                 eligibility.approved_by = devotee
@@ -400,16 +398,6 @@ class YatraEligibilityView(APIView):
                     if not created:
                         user_decision_eligibilities.append(eligibility)
                         reviewer_update_eligibilities.append(eligibility)
-
-            updated.append({
-                'profile_id': str(profile.id),
-                'action': 'approve',
-                'was_created': created,
-                'is_approved': True
-            })
-            # eligibility.is_approved = (action == 'approve')
-            # eligibility.approved_by = devotee
-            # eligibility.save()
 
             updated.append({
                 'profile_id': str(profile.id),

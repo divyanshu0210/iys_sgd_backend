@@ -16,6 +16,7 @@ from django.conf import settings
 from django.utils import timezone
 from django.db import transaction
 from django.db.models.functions import Lower
+import logging
 from userProfile.scopes import profiles_for_reviewer, reviewer_request_scope, reviewers_for_profile
 from userProfile.utils import resolve_bace_for_center
 
@@ -24,6 +25,16 @@ from userProfile.utils import resolve_bace_for_center
 frontend_url = getattr(settings, "FRONTEND_BASE_URL", "http://localhost:5173/")
 home_url = f"{frontend_url.rstrip('/')}/"
 MAX_PROFILE_PHOTO_SIZE = 1 * 1024 * 1024
+logger = logging.getLogger(__name__)
+
+
+def _delete_replaced_profile_picture(storage, old_name):
+    """Delete a replaced image only when no profile still references it."""
+    try:
+        if not Profile.objects.filter(profile_picture=old_name).exists():
+            storage.delete(old_name)
+    except Exception:
+        logger.exception("Could not delete replaced profile picture: %s", old_name)
 
 
 def create_bace_verification_requests(profile, bace):
@@ -109,8 +120,10 @@ class ProfileView(APIView):
     @transaction.atomic
     def post(self, request):
         """Create or update profile; handle mentor requests automatically"""
-        profile, created = Profile.objects.get_or_create(user=request.user)
+        profile, created = Profile.objects.select_for_update().get_or_create(user=request.user)
         old_mentor = profile.mentor
+        old_picture_name = profile.profile_picture.name
+        picture_storage = profile.profile_picture.storage
         requested_center = request.data.get("center", profile.center)
 
         # The frontend may show a broader list than the Baces configured in
@@ -213,6 +226,11 @@ class ProfileView(APIView):
 
         updated_profile = serializer.save()
 
+        if incoming_photo and old_picture_name and old_picture_name != updated_profile.profile_picture.name:
+            transaction.on_commit(
+                lambda: _delete_replaced_profile_picture(picture_storage, old_picture_name)
+            )
+
         if requested_center and updated_profile.profile_verification_status != "verified":
             updated_profile.profile_verification_status = "pending"
             updated_profile.user_type = "guest"
@@ -228,47 +246,6 @@ class ProfileView(APIView):
         return Response(response_serializer.data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
         
-class ProfilePictureUploadView(APIView):
-    """
-    Upload or update profile picture.
-    POST: Upload a new profile picture for the logged-in user.
-    """
-    permission_classes = [IsAuthenticated]
-    parser_classes = [MultiPartParser, FormParser]
-
-    def post(self, request):
-        profile = request.user.profile
-        image = request.data.get('profile_picture')
-
-        if not image:
-            return Response({'error': 'No image file provided'}, status=status.HTTP_400_BAD_REQUEST)
-
-        if image.size > MAX_PROFILE_PHOTO_SIZE:
-            return Response(
-                {'error': 'Photo must be 1 MB or smaller.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        image_serializer = ProfileSerializer(
-            profile,
-            data={'profile_picture': image},
-            partial=True,
-            context={'request': request},
-        )
-        if not image_serializer.is_valid():
-            return Response(image_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        # Remove old image if exists
-        if profile.profile_picture:
-            profile.profile_picture.delete(save=False)
-
-        image_serializer.save()
-
-        serializer = ProfileSerializer(profile, context={'request': request})
-        return Response({
-            "message": "Profile picture uploaded successfully.",
-            "profile": serializer.data
-        }, status=status.HTTP_200_OK)
     
 
 class MentorRequestView(APIView):

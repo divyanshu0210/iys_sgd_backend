@@ -8,26 +8,13 @@ from django.db import models
 # models.py
 
 
-def profile_picture_upload_path(instance, filename):
-    """
-    Generate a unique profile picture filename using the member_id.
-    If member_id exists, it overwrites the previous image automatically.
-    """
-    ext = filename.split('.')[-1].lower()
-
-    # ✅ If the user already has a member_id, use it as the filename.
-    if instance.member_id:
-        filename = f"{instance.member_id}.{ext}"
-    else:
-        # Fallback for brand new users (member_id not assigned yet)
-        filename = f"temp_{uuid.uuid4()}.{ext}"
-
-    return os.path.join('profile_pics', filename) 
 
 
 
 def profile_picture_upload_path(instance, filename):
-    return f"profile_pictures/{instance.user.username}/{filename}"
+    """Use a fresh storage key so replacing a photo cannot overwrite the old one."""
+    extension = os.path.splitext(filename)[1].lower()
+    return f"profile_pictures/{instance.user.username}/{uuid.uuid4().hex}{extension}"
 
 class Profile(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
