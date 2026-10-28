@@ -1,4 +1,4 @@
-from userProfile.models import Profile
+from userProfile.models import Bace, OtherCenter, Profile
 
 
 
@@ -11,6 +11,43 @@ CENTER_CODE_MAP = {
 }
 DEFAULT_OTHER_CENTER_CODE = "6"
 PENDING_APPROVAL_CODE = "7"
+
+
+def resolve_bace_for_center(center):
+    """Resolve a non-empty center to an active Bace.
+
+    Configured Baces and aliases in ``OtherCenter`` are resolved directly.
+    Any other non-empty center is grouped under the active ``Others`` Bace.
+    A missing center remains unassigned rather than being silently grouped.
+    """
+    if not center:
+        return None
+
+    bace = Bace.objects.filter(
+        name__iexact=center,
+        is_active=True,
+    ).first()
+    if bace:
+        return bace
+
+    other_center = (
+        OtherCenter.objects.filter(
+            name__iexact=center,
+            is_active=True,
+            bace__is_active=True,
+        )
+        .select_related("bace")
+        .first()
+    )
+    if other_center:
+        return other_center.bace
+
+    return Bace.objects.filter(
+        name__iexact="Others",
+        is_active=True,
+    ).first()
+
+
 
 def generate_member_id(*, year, center_code):
     prefix = f"{year}{center_code}"  # YYC

@@ -7,16 +7,17 @@ from django.shortcuts import get_object_or_404
 from rest_framework.permissions import IsAdminUser, AllowAny, IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from helpers.mail import send_template_email
-from helpers.notifications import (
+from userProfile.notifications import (
     notify_new_profile_request,
     notify_mentor_request_decision,
-    notify_profile_review_update,
+    notify_profile_review_batch,
 )
 from django.conf import settings
 from django.utils import timezone
 from django.db import transaction
-from django.db.models import Q
 from django.db.models.functions import Lower
+from userProfile.scopes import profiles_for_reviewer, reviewer_request_scope, reviewers_for_profile
+from userProfile.utils import resolve_bace_for_center
 
 # models.py
 # ✅ Get base URL from settings
@@ -77,51 +78,6 @@ def create_bace_verification_requests(profile, bace):
     return request_obj
 
 
-def reviewer_baces(profile):
-    """Return the active Baces managed by this counsellor or mentor."""
-    return Bace.objects.filter(
-        is_active=True,
-    ).filter(
-        Q(mentors=profile) | Q(counsellor=profile),
-    ).distinct()
-
-
-def reviewer_request_scope(profile):
-    """Requests this reviewer may see or action, including legacy rows."""
-    managed_baces = reviewer_baces(profile)
-    active_bace_names = Bace.objects.filter(
-        is_active=True,
-    ).values_list("name", flat=True)
-    legacy_center_names = list(
-        active_bace_names
-    ) + list(
-        OtherCenter.objects.filter(
-            is_active=True,
-            bace__is_active=True,
-        ).values_list(
-            "name", flat=True
-        )
-    )
-    legacy_unknown_center_scope = Q(pk=None)
-    if managed_baces.filter(name="Others").exists():
-        legacy_unknown_center_scope = Q(
-            requested_bace__isnull=True,
-        ) & (
-            Q(from_user__center__isnull=True)
-            | ~Q(from_user__center__in=legacy_center_names)
-        )
-
-    return (
-        Q(to_mentor=profile)
-        | Q(requested_bace__in=managed_baces)
-        | Q(
-            requested_bace__isnull=True,
-            from_user__center__in=legacy_center_names,
-        )
-        | legacy_unknown_center_scope
-    )
-
-
 class BaceListView(APIView):
     permission_classes = [AllowAny]
 
@@ -160,23 +116,12 @@ class ProfileView(APIView):
         # The frontend may show a broader list than the Baces configured in
         # admin. Anything not configured is grouped under the mandatory
         # fallback Bace named "Others".
-        requested_bace = Bace.objects.filter(
-            name=requested_center, is_active=True
-        ).first() if requested_center else None
+        requested_bace = resolve_bace_for_center(requested_center)
         if requested_center and not requested_bace:
-            configured_other = OtherCenter.objects.filter(
-                name__iexact=requested_center,
-                is_active=True,
-                bace__is_active=True,
-            ).select_related("bace").first()
-            requested_bace = configured_other.bace if configured_other else None
-        if requested_center and not requested_bace:
-            requested_bace = Bace.objects.filter(name="Others", is_active=True).first()
-            if not requested_bace:
-                return Response(
-                    {"center": "The fallback Bace 'Others' is not configured."},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                )
+            return Response(
+                {"center": "The fallback Bace 'Others' is not configured."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
         current_center = profile.center or ""
 
@@ -346,18 +291,15 @@ class MentorRequestView(APIView):
         # =================================================================
         # 1. APPROVED MENTEES (from approved MentorRequest)
         # =================================================================
-        approved_requests = MentorRequest.objects.filter(
-            reviewer_request_scope(mentor_profile),
-            is_approved=True,
-        ).select_related('from_user__user', 'from_user__mentor', 'requested_bace').distinct().order_by(
-            Lower('from_user__first_name'),
-            Lower('from_user__last_name'),
-            'from_user_id',
+        approved_profiles = Profile.objects.filter(
+            pk__in=profiles_for_reviewer(mentor_profile),
+        ).select_related('user', 'mentor').order_by(
+            Lower('first_name'), Lower('last_name'), 'id',
         )
 
         approved_mentees_data = [
-            ProfileFastSerializer(req.from_user, context={'request': request}).data
-            for req in approved_requests
+            ProfileFastSerializer(profile, context={'request': request}).data
+            for profile in approved_profiles
         ]
 
         # =================================================================
@@ -404,109 +346,86 @@ class MentorRequestView(APIView):
 
 
     def post(self, request):
-        """
-        POST:
-        Approve a mentor request and notify the mentee by email.
-        """
-        request_id = request.data.get('request_id')
-        mentor_profile = request.user.profile
-        print(request_id,'printing req id ...................................')
-        req = get_object_or_404(
-            MentorRequest.objects.filter(
-                reviewer_request_scope(mentor_profile),
-            ),
-            id=request_id,
-            is_approved=False,
-            is_rejected=False,
+        request_ids = request.data.get("request_ids")
+        if request_ids is None and request.data.get("request_id"):
+            request_ids = [request.data["request_id"]]
+        return self.process(
+            request, request_ids, request.data.get("action", "connect")
         )
 
-        with transaction.atomic():
-            if req.requested_bace and not req.requested_bace.counsellor:
-                return Response(
-                    {"detail": "This Bace does not have a counsellor assigned yet."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            req.is_approved = True
-            req.save(update_fields=["is_approved"])
-
-            mentee = req.from_user
-            counsellor = req.requested_bace.counsellor if req.requested_bace else mentor_profile
-            mentee.mentor = counsellor
-            mentee.user_type = 'devotee'
-            mentee.profile_verification_status = 'verified'
-            mentee.save(update_fields=[
-                'mentor', 'user_type', 'profile_verification_status',
-            ])
-
-            # One approval closes the other requests for the same Bace.
-            MentorRequest.objects.filter(
-                from_user=mentee,
-                requested_bace=req.requested_bace,
-                is_approved=False,
-                is_rejected=False,
-            ).exclude(pk=req.pk).update(
-                is_rejected=True,
-                rejected_at=timezone.now(),
-                rejected_by=mentor_profile,
-            )
-
-        transaction.on_commit(
-            lambda: notify_mentor_request_decision(req, True, mentor_profile)
-        )
-        transaction.on_commit(
-            lambda: notify_profile_review_update(req, mentor_profile)
-        )
-
-        return Response({"message": "Mentee request approved successfully."}, status=status.HTTP_200_OK)
-
-    # DELETE: Reject request (request_id from URL)
     def delete(self, request, request_id=None):
         if not request_id:
-            return Response({"error": "request_id is required in URL"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "request_id is required in URL"}, status=400)
+        return self.process(request, [request_id], "reject")
 
-        mentor_profile = request.user.profile
+    def process(self, request, request_ids, action):
+        from uuid import UUID
 
+        if not isinstance(request_ids, list) or not request_ids or action not in {"connect", "reject"}:
+            return Response({"detail": "Provide request_ids and an action of connect or reject."}, status=400)
         try:
-            req = MentorRequest.objects.filter(
-                reviewer_request_scope(mentor_profile),
-                id=request_id,
-                is_approved=False,
-                is_rejected=False,
-            ).get()
-        except MentorRequest.DoesNotExist:
-            return Response({"error": "Request not found or already processed"}, status=status.HTTP_404_NOT_FOUND)
+            ids = list(dict.fromkeys(UUID(str(value)) for value in request_ids))
+        except (TypeError, ValueError, AttributeError):
+            return Response({"detail": "Invalid request ID."}, status=400)
 
-        mentee = req.from_user
-        mentee = req.from_user
-        req.is_rejected = True
-        req.rejected_at = timezone.now()
-        req.rejected_by = mentor_profile
-        req.save(update_fields=["is_rejected", "rejected_at", "rejected_by"])
+        reviewer = request.user.profile
+        approved = action == "connect"
+        with transaction.atomic():
+            requests = list(
+                MentorRequest.objects.filter(
+                    reviewer_request_scope(reviewer),
+                    pk__in=ids,
+                    is_approved=False,
+                    is_rejected=False,
+                ).select_related("from_user__user", "to_mentor__user", "requested_bace__counsellor__user")
+                .select_for_update(of=("self",))
+            )
+            if len(requests) != len(ids):
+                return Response({"detail": "Some requests are unavailable or already processed."}, status=400)
+            current_baces = {req.pk: resolve_bace_for_center(req.from_user.center) for req in requests}
+            if approved and any(bace and not bace.counsellor for bace in current_baces.values()):
+                return Response({"detail": "A selected Bace has no counsellor assigned."}, status=400)
+            if len({req.from_user_id for req in requests}) != len(requests):
+                return Response({"detail": "Select only one pending request per profile."}, status=400)
 
-        # Rejection is final for this Bace round. The user can choose another Bace.
-        MentorRequest.objects.filter(
-            from_user=mentee,
-            requested_bace=req.requested_bace,
-            is_approved=False,
-            is_rejected=False,
-        ).exclude(pk=req.pk).update(
-            is_rejected=True,
-            rejected_at=timezone.now(),
-            rejected_by=mentor_profile,
-        )
-        mentee.mentor = None
-        mentee.user_type = 'guest'
-        mentee.profile_verification_status = 'rejected'
-        mentee.save(update_fields=[
-            "mentor", "user_type", "profile_verification_status",
-        ])
+            review_recipients = {
+                req.pk: list(reviewers_for_profile(req.from_user)) for req in requests
+            }
+            for req in requests:
+                mentee = req.from_user
+                if approved:
+                    current_mentor = mentee.mentor
+                    req.is_approved = True
+                    req.save(update_fields=["is_approved"])
+                    bace = current_baces[req.pk]
+                    mentee.mentor = bace.counsellor if bace else (current_mentor or reviewer)
+                    mentee.user_type = "devotee"
+                    mentee.profile_verification_status = "verified"
+                else:
+                    req.is_rejected = True
+                    req.rejected_at = timezone.now()
+                    req.rejected_by = reviewer
+                    req.save(update_fields=["is_rejected", "rejected_at", "rejected_by"])
+                    mentee.mentor = None
+                    mentee.user_type = "guest"
+                    mentee.profile_verification_status = "rejected"
+                mentee.save(update_fields=["mentor", "user_type", "profile_verification_status"])
+                MentorRequest.objects.filter(
+                    from_user=mentee, requested_bace=req.requested_bace,
+                    is_approved=False, is_rejected=False,
+                ).exclude(pk=req.pk).update(
+                    is_rejected=True, rejected_at=timezone.now(), rejected_by=reviewer,
+                )
 
-        transaction.on_commit(
-            lambda: notify_mentor_request_decision(req, False, mentor_profile)
-        )
+            for req in requests:
+                transaction.on_commit(
+                    lambda req=req: notify_mentor_request_decision(req, approved, reviewer)
+                )
+            transaction.on_commit(
+                lambda: notify_profile_review_batch(requests, reviewer, approved, review_recipients)
+            )
 
-        return Response({"message": "Request rejected."}, status=status.HTTP_200_OK)
+        return Response({"message": "Requests processed successfully.", "processed": len(requests)})
     
 
 # api/views.py

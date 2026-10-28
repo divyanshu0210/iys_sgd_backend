@@ -4,7 +4,7 @@ from userProfile.models import *
 from yatra.models import *
 from django.utils import timezone
 from django.db import transaction
-from helpers.notifications import notify_payment_result
+from payment.notifications import notify_payment_result
 
 
 # models.py - Add Payment model to track single transactions

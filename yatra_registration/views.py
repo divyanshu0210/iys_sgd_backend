@@ -12,8 +12,9 @@ from .models import *
 from userProfile.serializers import *
 from .serializers import *
 from userProfile.models import *
+from userProfile.scopes import profiles_for_reviewer, reviewers_for_profile
 from payment.models import *
-from helpers.notifications import (
+from yatra_registration.notifications import (
     notify_yatra_approval_request,
     notify_yatra_eligibility_decision,
     notify_yatra_approval_update,
@@ -77,47 +78,6 @@ def installments_for_phase(yatra, phase=None):
 
 def phase_payload(phase):
     return RegistrationPhaseSummarySerializer(phase).data if phase else None
-
-
-def profiles_for_reviewer(reviewer):
-    """Return verified profiles from every Bace this reviewer manages."""
-    reviewer_baces = Bace.objects.filter(
-        is_active=True,
-    ).filter(
-        Q(mentors=reviewer) | Q(counsellor=reviewer)
-    ).distinct()
-    reviewer_bace_ids = reviewer_baces.values_list("id", flat=True)
-    reviewer_bace_names = reviewer_baces.values_list("name", flat=True)
-    other_center_names = OtherCenter.objects.filter(
-        bace_id__in=reviewer_bace_ids,
-        is_active=True,
-    ).values_list("name", flat=True)
-    reviewer_ids = Profile.objects.filter(
-        Q(mentor_baces__in=reviewer_baces)
-        | Q(counselled_baces__in=reviewer_baces)
-    ).values_list("id", flat=True)
-    approved_request_ids = MentorRequest.objects.filter(
-        is_approved=True,
-    ).filter(
-        Q(requested_bace_id__in=reviewer_bace_ids)
-        | (
-            Q(to_mentor_id=reviewer)
-            | (
-                Q(to_mentor_id__in=reviewer_ids)
-                & (
-                    Q(from_user__center__in=reviewer_bace_names)
-                    | Q(from_user__center__in=other_center_names)
-                )
-            )
-        )
-    ).values_list("from_user_id", flat=True)
-
-    return Profile.objects.filter(
-        id__in=approved_request_ids,
-        profile_verification_status="verified",
-    ).values_list("id", flat=True).distinct()
-
-
 
 
 class YatraEligibilityView(APIView):
@@ -260,6 +220,13 @@ class YatraEligibilityView(APIView):
                     el.approved_at.isoformat()
                     if el and el.approved_at else None
                 ),
+                # ``approved_at`` is also the legacy eligibility creation
+                # timestamp (the model predates a separate created_at field).
+                # Expose it explicitly for pending approval requests.
+                'request_created_at': (
+                    el.approved_at.isoformat()
+                    if el and not el.is_approved and el.approved_at else None
+                ),
                 'is_self': profile.id == mentor.id,
             })
 
@@ -305,27 +272,18 @@ class YatraEligibilityView(APIView):
 
         updated = []
         errors = []
+        reviewer_update_eligibilities = []
+        user_decision_eligibilities = []
 
         # === HANDLE REQUEST APPROVAL (SELF) ===
         if action == 'request_approval':
             if not profile_ids or str(devotee.id) not in profile_ids:
                 return Response({'error': 'You can only request approval for yourself.'}, status=400)
             # Must be self
-            # --- Find mentor: 1. MentorRequest → 2. Profile.mentor ---
+            # Use current reviewers, not historical profile requests.
             mentor = None
-
-            # 1. Try MentorRequest
-            mentor_req = MentorRequest.objects.filter(
-                from_user=devotee,
-                is_approved=True
-            ).first()
-
-            if mentor_req:
-                mentor = mentor_req.to_mentor
-            else:
-                # 2. Fallback: Profile.mentor field
-                if devotee.mentor and devotee.is_approved:
-                    mentor = devotee.mentor
+            if devotee.profile_verification_status == "verified":
+                mentor = devotee.mentor or reviewers_for_profile(devotee).first()
 
             if not mentor:
                 errors.append("You don't have an approved mentor to request from.")
@@ -379,7 +337,7 @@ class YatraEligibilityView(APIView):
             # The profile may have no MentorRequest if the reviewer was
             # assigned to the Bace after the profile was verified.
             if not profiles_for_reviewer(devotee).filter(id=profile.id).exists():
-                errors.append(f'{profile.get_full_name()} is not in a Center managed by you')
+                errors.append(f'{profile.full_name() or profile.user.username} is not in a Center managed by you')
                 continue
 
             # Get or create eligibility
@@ -416,6 +374,10 @@ class YatraEligibilityView(APIView):
                     errors.append(f'{profile.first_name} is already not approved')
                     continue
                 eligibility.delete()
+                # This is an existing eligibility record, so notify the user
+                # and reviewers that the approval was withdrawn.
+                user_decision_eligibilities.append(eligibility)
+                reviewer_update_eligibilities.append(eligibility)
                 updated.append({
                 'profile_id': str(profile.id),
                 'action': 'unapprove',
@@ -430,16 +392,14 @@ class YatraEligibilityView(APIView):
                 eligibility.save()
 
                 if not was_approved:
-                    transaction.on_commit(
-                        lambda eligibility=eligibility: notify_yatra_eligibility_decision(
-                            eligibility, True, devotee
-                        )
-                    )
-                    transaction.on_commit(
-                        lambda eligibility=eligibility: notify_yatra_approval_update(
-                            eligibility, devotee
-                        )
-                    )
+                    # A reviewer may pre-approve a profile before the user
+                    # submits a Yatra approval request. Do not send any
+                    # notification when this eligibility was created by the
+                    # reviewer action itself; the reviewer already knows the
+                    # action they just performed.
+                    if not created:
+                        user_decision_eligibilities.append(eligibility)
+                        reviewer_update_eligibilities.append(eligibility)
 
             updated.append({
                 'profile_id': str(profile.id),
@@ -457,6 +417,25 @@ class YatraEligibilityView(APIView):
                 'was_created': created,
                 'is_approved': eligibility.is_approved
             })
+
+        for eligibility in user_decision_eligibilities:
+            transaction.on_commit(
+                lambda eligibility=eligibility, action=action: notify_yatra_eligibility_decision(
+                    eligibility,
+                    action == 'approve',
+                    devotee,
+                    withdrawn=action == 'unapprove',
+                )
+            )
+
+        if reviewer_update_eligibilities:
+            transaction.on_commit(
+                lambda changed=tuple(reviewer_update_eligibilities), action=action: notify_yatra_approval_update(
+                    changed,
+                    devotee,
+                    approved=action == 'approve',
+                )
+            )
 
         if errors:
             return Response({'errors': errors, 'updated': updated}, status=400)
@@ -994,11 +973,7 @@ class YatraRegistrationView(APIView):
             allowed = True
 
         # Mentor cancel
-        elif MentorRequest.objects.filter(
-            from_user=profile,
-            to_mentor=requester,
-            is_approved=True
-        ).exists():
+        elif profiles_for_reviewer(requester).filter(pk=profile.pk).exists():
             allowed = True
 
         # Admin cancel
@@ -1035,11 +1010,7 @@ class YatraRegistrationView(APIView):
             except YatraEligibility.DoesNotExist:
                 return False
         else:
-            if not MentorRequest.objects.filter(
-                from_user=profile,
-                to_mentor=registrant,
-                is_approved=True
-            ).exists():
+            if not profiles_for_reviewer(registrant).filter(pk=profile.pk).exists():
                 return False
             
             try:

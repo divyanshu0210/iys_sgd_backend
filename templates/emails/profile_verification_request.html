@@ -1,17 +1,20 @@
 {% extends "emails/base.html" %}
 {% block content %}
 <p class="greeting">Hare Krishna, {{ reviewer_name }}!</p>
-{% if accepted_profile %}
-<p><strong>Accepted profile</strong></p>
+{% if accepted_profiles %}
+<!-- <p><strong>{% if review_outcome == "rejected" %}Rejected profile{% else %}Accepted profile{% endif %}</strong></p> -->
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 18px;"><tr>
+{% for accepted_profile in accepted_profiles %}
 <td width="56" style="width:56px; padding:0 8px 0 0; text-align:center; vertical-align:middle;">
 {% if accepted_profile.image_url %}
 <img src="{{ accepted_profile.image_url }}" alt="{{ accepted_profile.name }}" width="40" height="40" style="display:block; width:40px; height:40px; border-radius:50%; object-fit:cover;" />
 {% else %}
 <table role="presentation" width="40" height="40" cellpadding="0" cellspacing="0" border="0" style="width:40px; height:40px; background:#f5c518; border-radius:50%;"><tr><td align="center" valign="middle" style="width:40px; height:40px; color:#1a1a2e; font-weight:bold; font-size:17px;">{{ accepted_profile.initial }}</td></tr></table>
 {% endif %}
+<div style="font-size:10px; line-height:1.2; padding-top:4px; width:48px; overflow-wrap:anywhere; word-break:break-word;">{{ accepted_profile.name }}</div>
 </td>
-<td style="vertical-align:middle; color:#3f3f46;">{{ accepted_profile.name }} has been accepted by <strong>{{ accepted_by }}</strong>.</td>
+{% endfor %}
+<td style="vertical-align:middle; color:#3f3f46;">{% if accepted_profiles|length == 1 %}has{% else %}have{% endif %} been {% if review_outcome == "rejected" %}rejected{% else %}accepted{% endif %} by <strong>{{ reviewed_by }}</strong>.</td>
 </tr></table>
 {% endif %}
 {% if total_pending and single_group %}
@@ -40,5 +43,7 @@
 </tr></table>
 </td></tr></table>
 {% endfor %}
-<p style="text-align:center;"><a class="btn" href="{{ frontend_url }}" target="_blank">Review Profile</a></p>
+<p style="text-align:center;">
+  <a href="{{ frontend_url }}" target="_blank" style="display:inline-block; padding:12px 28px; background:#f5c518; color:#1a1a2e; font-weight:bold; border-radius:5px; text-decoration:none; font-size:15px;">Review Profile</a>
+</p>
 {% endblock %}

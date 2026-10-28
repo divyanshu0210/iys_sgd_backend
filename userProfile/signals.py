@@ -8,7 +8,7 @@ from django.conf import settings
 from helpers.mail import send_template_email
 
 
-from userProfile.utils import CENTER_CODE_MAP, DEFAULT_OTHER_CENTER_CODE, PENDING_APPROVAL_CODE, generate_member_id
+from userProfile.utils import CENTER_CODE_MAP, DEFAULT_OTHER_CENTER_CODE, PENDING_APPROVAL_CODE, generate_member_id, resolve_bace_for_center
 from .models import *
 
 @receiver(post_save, sender=User)
@@ -146,10 +146,11 @@ def update_mentee_on_approval(sender, instance, **kwargs):
                 year=f"{approval_year:02d}",
                 center_code=center_code
             )
+            current_bace = resolve_bace_for_center(mentee.center)
             assigned_counsellor = (
-                instance.requested_bace.counsellor
-                if instance.requested_bace and instance.requested_bace.counsellor
-                else instance.to_mentor
+                current_bace.counsellor
+                if current_bace and current_bace.counsellor
+                else mentee.mentor or instance.to_mentor
             )
             mentee.mentor = assigned_counsellor
             mentee.user_type = "devotee"

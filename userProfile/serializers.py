@@ -4,6 +4,7 @@ from django.conf import settings
 from django.core.cache import cache
 from rest_framework import serializers
 from .models import Profile
+from .utils import resolve_bace_for_center
 
 class MentorField(serializers.Field):
     """Custom field to handle mentor <-> member_id mapping"""
@@ -94,7 +95,7 @@ class ProfileSerializer(serializers.ModelSerializer):
         if obj.mentor and obj.mentor.user_type == 'counsellor':
             counsellor = obj.mentor
         elif obj.center:
-            bace = Bace.objects.filter(name=obj.center, is_active=True).select_related('counsellor').first()
+            bace = resolve_bace_for_center(obj.center)
             counsellor = bace.counsellor if bace else None
         return counsellor.full_name() if counsellor else None
 

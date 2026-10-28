@@ -18,7 +18,7 @@ import logging
 from rest_framework import status, permissions
 from django.db import connection
 from django.http import JsonResponse
-from helpers.notifications import notify_payment_submitted
+from payment.notifications import notify_payment_submitted
 
 logger = logging.getLogger(__name__)
 

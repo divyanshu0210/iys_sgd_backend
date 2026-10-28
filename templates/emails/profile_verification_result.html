@@ -5,13 +5,13 @@
 <p>Your profile has been <strong>verified and connected to {{ bace_name }}</strong> by <strong>{{ reviewer_name }}</strong>.</p>
 <p>You can now sign in to your dashboard and continue using the available services.</p>
 <p style="text-align:center;">
-  <a class="btn" href="{{ frontend_url }}" target="_blank">Go to Dashboard</a>
+  <a href="{{ frontend_url }}" target="_blank" style="display:inline-block; padding:12px 28px; background:#f5c518; color:#1a1a2e; font-weight:bold; border-radius:5px; text-decoration:none; font-size:15px;">Go to Dashboard</a>
 </p>
 {% else %}
-<p>Your profile was <strong>rejected by {{ reviewer_name }}</strong> for <strong>{{ bace_name }}</strong>.</p>
+<p>Your profile was <strong>rejected by {{ reviewer_name }}</strong> at this time.</p>
 <p>Please review your profile details and submit it again, or choose another center if applicable.</p>
 <p style="text-align:center;">
-  <a class="btn" href="{{ frontend_url }}" target="_blank">Review Profile</a>
+  <a href="{{ frontend_url }}" target="_blank" style="display:inline-block; padding:12px 28px; background:#f5c518; color:#1a1a2e; font-weight:bold; border-radius:5px; text-decoration:none; font-size:15px;">Review Profile</a>
 </p>
 {% endif %}
 {% endblock %}

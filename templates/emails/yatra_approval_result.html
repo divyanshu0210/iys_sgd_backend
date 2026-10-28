@@ -1,7 +1,9 @@
 {% extends "emails/base.html" %}
 {% block content %}
 <p class="greeting">Hare Krishna, {{ profile_name }}!</p>
-{% if approved %}
+{% if withdrawn %}
+<p>Your approval for <strong>{{ yatra_name }}</strong> was rejected by <strong>{{ reviewer_name }}</strong>.</p>
+{% elif approved %}
 <p>Your request to register for <strong>{{ yatra_name }}</strong> has been approved by <strong>{{ reviewer_name }}</strong>.</p>
 {% else %}
 <p>Your request to register for <strong>{{ yatra_name }}</strong> was declined by <strong>{{ reviewer_name }}</strong>.</p>
