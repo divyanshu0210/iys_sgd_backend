@@ -4,11 +4,69 @@ from decimal import Decimal
 from django.contrib.auth.models import User
 from django.test import TestCase
 from rest_framework.test import APIClient
+from django.template.loader import render_to_string
+from unittest.mock import patch
 
 from payment.models import Payment
 from userProfile.models import Profile
 from yatra.models import Yatra, YatraInstallment
 from yatra_registration.models import YatraRegistration, YatraRegistrationInstallment
+
+
+class PaymentEmailInstallmentTests(TestCase):
+    def test_rejection_followed_by_approval_renders_correct_emails(self):
+        user = User.objects.create_user(username="payment-decision", email="member@example.com")
+        profile = Profile.objects.create(user=user, first_name="Member")
+        yatra = Yatra.objects.create(title="Test Yatra", description="Test", start_date=date(2027, 1, 1), end_date=date(2027, 1, 2), location="Test", capacity=5)
+        registration = YatraRegistration.objects.create(yatra=yatra, registered_for=profile, registered_by=profile)
+        installment = YatraInstallment.objects.create(yatra=yatra, label="First installment", amount="100")
+        payment = Payment.objects.create(uploaded_by=profile, transaction_id="decision-test", total_amount=100)
+        record = YatraRegistrationInstallment.objects.create(registration=registration, installment=installment, payment=payment)
+
+        with patch("payment.notifications._send") as send:
+            with self.captureOnCommitCallbacks(execute=True):
+                payment.reject(profile)
+            rejection = send.call_args.args[2]
+            self.assertEqual(rejection["status"], "Rejected")
+            self.assertIn("We could not approve your payment", render_to_string("emails/payment_status.html", rejection))
+            record.refresh_from_db()
+            self.assertFalse(record.is_paid)
+
+            with self.captureOnCommitCallbacks(execute=True):
+                payment.approve(profile)
+            approval = send.call_args.args[2]
+            self.assertEqual(approval["status"], "Approved")
+            self.assertIn("successfully verified & approved", render_to_string("emails/payment_status.html", approval))
+            self.assertEqual(approval["payment_rows"][0]["status"], "Approved")
+            record.refresh_from_db()
+            self.assertTrue(record.is_paid)
+            self.assertEqual(send.call_count, 2)
+
+    def test_email_identifies_only_installments_covered_by_payment(self):
+        from payment.notifications import notify_payment_submitted, notify_payment_result
+
+        user = User.objects.create_user(username="payment-email")
+        profile = Profile.objects.create(user=user, first_name="Member")
+        yatra = Yatra.objects.create(title="Test Yatra", description="Test", start_date=date(2027, 1, 1), end_date=date(2027, 1, 2), location="Test", capacity=5)
+        registration = YatraRegistration.objects.create(yatra=yatra, registered_for=profile, registered_by=profile)
+        first = YatraInstallment.objects.create(yatra=yatra, label="First installment", amount="100", order=1)
+        second = YatraInstallment.objects.create(yatra=yatra, label="Second installment", amount="200", order=2)
+        payment = Payment.objects.create(uploaded_by=profile, transaction_id="email-test", total_amount=100)
+        YatraRegistrationInstallment.objects.create(registration=registration, installment=first, payment=payment)
+        YatraRegistrationInstallment.objects.create(registration=registration, installment=second)
+
+        with patch("payment.notifications._send") as send:
+            for notify in (lambda: notify_payment_submitted(payment), lambda: notify_payment_result(payment, True, profile), lambda: notify_payment_result(payment, False, profile)):
+                notify()
+                context = send.call_args.args[2]
+                self.assertEqual(context["payment_installments"], "First installment")
+                rendered = render_to_string("emails/payment_status.html", context)
+                self.assertIn("<strong>First installment</strong>", rendered)
+                self.assertIn("Second installment", rendered)  # Full status table remains intact.
+
+        from payment.notifications import _payment_installment_names
+        YatraRegistrationInstallment.objects.filter(registration=registration, installment=second).update(payment=payment)
+        self.assertEqual(_payment_installment_names(payment), "First installment, Second installment")
 
 
 class BatchPaymentSecurityTests(TestCase):

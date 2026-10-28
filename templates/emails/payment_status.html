@@ -2,15 +2,15 @@
 {% block content %}
 <p class="greeting">Hare Krishna, {{ profile_name }}!</p>
 {% if status == "Submitted for review" %}
-<p>We have received your payment details for <strong>{{ yatra_name }}</strong>.</p>
+<p>We have received your payment details{% if payment_installments %} for <strong>{{ payment_installments }}</strong> for the Yatra <strong>{{ yatra_name }}</strong>{% else %} for <strong>{{ yatra_name }}</strong>{% endif %}.</p>
 <p><strong>Status:</strong> Your payment is under review. We will let you know once it has been checked.</p>
 {% elif status == "Approved" %}
-<p>Your payment for <strong>{{ yatra_name }}</strong> has been successfully verified & approved.</p>
+<p>Your payment{% if payment_installments %} for <strong>{{ payment_installments }}</strong> for the Yatra <strong>{{ yatra_name }}</strong>{% else %} for <strong>{{ yatra_name }}</strong>{% endif %} has been successfully verified & approved.</p>
 {% else %}
-<p>We could not approve your payment for <strong>{{ yatra_name }}</strong>.</p>
+<p>We could not approve your payment{% if payment_installments %} for <strong>{{ payment_installments }}</strong> for the Yatra <strong>{{ yatra_name }}</strong>{% else %} for <strong>{{ yatra_name }}</strong>{% endif %}.</p>
 {% endif %}
 <p>Transaction ID: <strong>{{ transaction_id }}</strong><br>Amount: <strong>{{ amount }}</strong></p>
-{% if notes %}<p>Notes: {{ notes }}</p>{% endif %}
+<!-- {% if notes %}<p>Notes: {{ notes }}</p>{% endif %} -->
 <p><strong>Next step:</strong> {{ next_step }}</p>
 {% if payment_rows %}
 <p><strong>Payment details</strong></p>

@@ -14,6 +14,7 @@ def notify_payment_submitted(payment):
         {
             "profile_name": _name(payment.uploaded_by),
             "yatra_name": yatra_name,
+            "payment_installments": _payment_installment_names(payment),
             "transaction_id": payment.transaction_id,
             "amount": payment.total_amount,
             "status": "Submitted for review",
@@ -24,6 +25,14 @@ def notify_payment_submitted(payment):
         },
         payment.uploaded_by,
     )
+
+
+def _payment_installment_names(payment):
+    """Names covered by this payment, not every installment in the table."""
+    names = payment.installments.order_by(
+        "installment__order", "installment__id"
+    ).values_list("installment__label", flat=True)
+    return ", ".join(dict.fromkeys(name for name in names if name))
 
 
 def _payment_yatra_name(payment):
@@ -125,13 +134,12 @@ def _payment_next_step(status, rows):
     if status == "Submitted for review":
         if has_more_to_pay:
             return (
-                "This payment is under review. If you have other installments "
-                "to pay, you can proceed with them while you wait."
+              "This payment is under review. You can still proceed with any other installments you need to pay."
             )
         return "Please wait for confirmation for payments to be verified."
     if status == "Approved":
         if has_more_to_pay:
-            return "You can proceed with any remaining installments shown above."
+            return "You can proceed to pay your remaining installments."
         if all_verified:
             return (
                 "All your payments have been verified. Please stay updated with "
@@ -139,8 +147,7 @@ def _payment_next_step(status, rows):
             )
         return "Please stay updated with further Yatra details on your dashboard."
     return (
-        "Please review the notes, correct the issue if needed, and submit the "
-        "payment proof again."
+        "Please review & correct the issue, and submit the payment again."
     )
 
 
@@ -154,6 +161,7 @@ def notify_payment_result(payment, approved, reviewer):
         {
             "profile_name": _name(payment.uploaded_by),
             "yatra_name": yatra_name,
+            "payment_installments": _payment_installment_names(payment),
             "transaction_id": payment.transaction_id,
             "amount": payment.total_amount,
             "status": status,
