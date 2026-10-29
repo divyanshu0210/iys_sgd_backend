@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.admin import RelatedOnlyFieldListFilter
-from userProfile.admin_utils import export_as_excel
+from userProfile.admin_utils import export_as_excel, format_profile_name
 from .models import *
 from django.urls import path
 from .admin_views import *
@@ -132,10 +132,20 @@ def custom_field_name(self, instance):
 @admin.register(YatraEligibility)
 class YatraEligibilityAdmin(ActiveYatraAdminMixin, admin.ModelAdmin):
     change_list_template = "admin/active_yatra_changelist.html"
-    list_display = ('yatra', 'profile', 'approved_by', 'is_approved', 'approved_at')
+    list_display = ('yatra', 'profile_display', 'approved_by_display', 'is_approved', 'approved_at')
     list_filter = ('is_approved', 'yatra','yatra__title', 'approved_at')
-    search_fields = ('profile__first_name', 'profile__last_name', 'yatra__title')
+    search_fields = ('profile__first_name', 'profile__last_name', 'profile__initiated_name', 'approved_by__initiated_name', 'yatra__title')
     ordering = ('-approved_at',)
+
+    list_select_related = ('profile', 'approved_by', 'yatra')
+
+    @admin.display(description='Profile', ordering='profile__first_name')
+    def profile_display(self, obj):
+        return format_profile_name(obj.profile)
+
+    @admin.display(description='Approver', ordering='approved_by__first_name')
+    def approved_by_display(self, obj):
+        return format_profile_name(obj.approved_by)
 
     def has_add_permission(self, request):
         return False
@@ -160,9 +170,9 @@ class RegistrationJourneyInline(admin.TabularInline):
 @admin.register(YatraRegistration)
 class YatraRegistrationAdmin(ActiveYatraAdminMixin, admin.ModelAdmin):
     list_display = (
-        'registered_for',
+        'registered_for_display',
         'yatra',
-        'registered_by',
+        'registered_by_display',
         'mentor_full_name',
         'registration_status',
         'registration_phase',
@@ -179,8 +189,10 @@ class YatraRegistrationAdmin(ActiveYatraAdminMixin, admin.ModelAdmin):
         'yatra__title',
         'registered_for__first_name',
         'registered_for__last_name',
+        'registered_for__initiated_name',
         'registered_by__first_name',
         'registered_by__last_name',
+        'registered_by__initiated_name',
         'phase__name',
     )
     list_filter = (
@@ -197,6 +209,14 @@ class YatraRegistrationAdmin(ActiveYatraAdminMixin, admin.ModelAdmin):
         RegistrationCustomFieldValueInline
     ]
     actions = [export_as_excel]
+
+    @admin.display(description='Registered for', ordering='registered_for__first_name')
+    def registered_for_display(self, obj):
+        return format_profile_name(obj.registered_for)
+
+    @admin.display(description='Registered by', ordering='registered_by__first_name')
+    def registered_by_display(self, obj):
+        return format_profile_name(obj.registered_by)
 
     @admin.display(description="Phase", ordering='phase__name')
     def registration_phase(self, obj):
@@ -470,11 +490,7 @@ class YatraRegistrationAdmin(ActiveYatraAdminMixin, admin.ModelAdmin):
 #──────────────────────────────────────────────────────────────
     def mentor_full_name(self, obj):
         """Return mentor full name of the person who is registered_for."""
-        if obj.registered_for and obj.registered_for.mentor:
-            first = obj.registered_for.mentor.first_name or ""
-            last = obj.registered_for.mentor.last_name or ""
-            return f"{first} {last}".strip()
-        return "-"
+        return format_profile_name(obj.registered_for.mentor if obj.registered_for else None)
     mentor_full_name.short_description = "Mentor Name"
 
 # ──────────────────────────────────────────────────────────────

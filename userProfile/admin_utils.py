@@ -3,11 +3,27 @@ import logging
 import openpyxl
 from django.http import HttpResponse
 from django.utils.html import strip_tags
+from django.utils.html import format_html
 from openpyxl.styles import Font, PatternFill, Alignment
 from django.utils.timezone import localtime, is_aware
 
 
 logger = logging.getLogger(__name__)
+
+
+def format_profile_name(profile, inline=False):
+    """Display initiated and regular names consistently in admin lists."""
+    if not profile:
+        return "—"
+    full_name = profile.full_name()
+    initiated_name = (profile.initiated_name or "").strip()
+    if profile.is_initiated and initiated_name:
+        if full_name and full_name.casefold() != initiated_name.casefold():
+            if inline:
+                return format_html('{} <small>({})</small>', initiated_name, full_name)
+            return format_html('{}<br><small>({})</small>', initiated_name, full_name)
+        return initiated_name
+    return full_name or "—"
 
 
 def export_as_excel(modeladmin, request, queryset):
@@ -110,7 +126,7 @@ def _export_queryset_as_excel(modeladmin, request, queryset):
             elif isinstance(value, datetime.date):
                 cell_value = value
             else:
-                cell_value = strip_tags(str(value)) if value is not None else ""
+                cell_value = strip_tags(str(value).replace("<br>", " ")) if value is not None else ""
 
 
             # row.append(strip_tags(str(value)) if value is not None else "")

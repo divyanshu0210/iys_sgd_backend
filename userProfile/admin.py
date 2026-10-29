@@ -1,12 +1,15 @@
 from django.contrib import admin
-from userProfile.admin_utils import export_as_excel
+from userProfile.admin_utils import export_as_excel, format_profile_name
 from .models import *
 from django.contrib import admin
 from django.utils.timezone import localtime
-from django.utils.html import format_html
+from django.utils.html import format_html, format_html_join
 from django.db.models import Prefetch, Max, Q
 from django.db.models import OuterRef, Subquery, BooleanField, DateTimeField
 from django import forms
+from html import unescape
+from uuid import UUID
+from django.utils.html import strip_tags
 
 
 class BaceAdminForm(forms.ModelForm):
@@ -21,6 +24,10 @@ class BaceAdminForm(forms.ModelForm):
         self.fields['mentors'].queryset = Profile.objects.filter(
             Q(user_type__in=['mentor', 'counsellor']) | Q(user__is_superuser=True)
         ).order_by('first_name', 'last_name')
+        # The dual-list selector uses ModelChoiceField labels, not list_display.
+        self.fields['mentors'].label_from_instance = lambda mentor: unescape(
+            strip_tags(format_profile_name(mentor, inline=True))
+        )
 
     def clean(self):
         cleaned_data = super().clean()
@@ -45,11 +52,16 @@ class OtherCenterInline(admin.TabularInline):
 @admin.register(Bace)
 class BaceAdmin(admin.ModelAdmin):
     form = BaceAdminForm
-    list_display = ('name', 'is_active', 'counsellor', 'mentor_count')
+    list_display = ('name', 'is_active', 'counsellor_display', 'mentors_display')
+    list_select_related = ('counsellor',)
     list_filter = ('is_active',)
     search_fields = ('name', 'counsellor__first_name', 'counsellor__last_name')
     filter_horizontal = ('mentors',)
     inlines = [OtherCenterInline]
+
+    @admin.display(description='Counsellor', ordering='counsellor__first_name')
+    def counsellor_display(self, obj):
+        return format_profile_name(obj.counsellor)
 
     def get_inline_instances(self, request, obj=None):
         inline_instances = super().get_inline_instances(request, obj)
@@ -57,9 +69,40 @@ class BaceAdmin(admin.ModelAdmin):
             return []
         return inline_instances
 
-    def mentor_count(self, obj):
-        return obj.mentors.count()
-    mentor_count.short_description = 'Mentors'
+    def get_queryset(self, request):
+        return super().get_queryset(request).prefetch_related(
+            Prefetch('mentors', queryset=Profile.objects.order_by('first_name', 'last_name', 'pk'))
+        )
+
+    @admin.display(description='Mentors')
+    def mentors_display(self, obj):
+        mentors = list(obj.mentors.all())
+        if not mentors:
+            return '—'
+        return format_html_join(', ', '{}', ((format_profile_name(mentor, inline=True),) for mentor in mentors))
+
+
+class ProfileMentorFilter(admin.SimpleListFilter):
+    title = 'Mentor'
+    parameter_name = 'assigned_mentor'
+
+    def lookups(self, request, model_admin):
+        assigned_ids = Profile.objects.exclude(mentor__isnull=True).values('mentor_id')
+        mentors = Profile.objects.filter(pk__in=assigned_ids).order_by('first_name', 'last_name', 'pk')
+        return [
+            (str(mentor.pk), unescape(strip_tags(format_profile_name(mentor, inline=True))))
+            for mentor in mentors
+        ] + [('unassigned', 'No mentor')]
+
+    def queryset(self, request, queryset):
+        if not self.value():
+            return queryset
+        if self.value() == 'unassigned':
+            return queryset.filter(mentor__isnull=True)
+        try:
+            return queryset.filter(mentor_id=UUID(self.value()))
+        except (ValueError, TypeError, AttributeError):
+            return queryset.none()
 
 
 @admin.register(Profile)
@@ -69,8 +112,7 @@ class ProfileAdmin(admin.ModelAdmin):
         'profile_photo_preview',
         'user_username',
         'user_type',
-        'first_name',
-        'last_name',
+        'display_name',
         'dob',
         'mobile',
         'center',
@@ -85,6 +127,7 @@ class ProfileAdmin(admin.ModelAdmin):
         'member_id',
         'first_name',
         'last_name',
+        'initiated_name',
         'mobile',
         'aadhar_card_no',
         # 'country',
@@ -93,6 +136,7 @@ class ProfileAdmin(admin.ModelAdmin):
     )
 
     list_filter = (
+        ProfileMentorFilter,
         'user_type',
         'gender',
         'marital_status',
@@ -137,6 +181,10 @@ class ProfileAdmin(admin.ModelAdmin):
         return f"{obj.member_id:06d}" if obj.member_id is not None else "-"
     formatted_member_id.short_description = "Member ID"
 
+    @admin.display(description="Full name", empty_value="—")
+    def display_name(self, obj):
+        return format_profile_name(obj)
+
     def user_username(self, obj):
         return obj.user.username if obj.user else "—"
     user_username.short_description = "User"
@@ -147,9 +195,7 @@ class ProfileAdmin(admin.ModelAdmin):
     # ---------------------------
 
     def mentor_display(self, obj):
-        if not obj.mentor:
-            return "-"
-        return obj.mentor.full_name() or obj.mentor.user.username
+        return format_profile_name(obj.mentor)
     mentor_display.short_description = "Mentor Name"
 
     def mentor_request_approved(self, obj):
@@ -232,9 +278,9 @@ class MentorOnlyFilter(admin.SimpleListFilter):
 class MentorRequestAdmin(admin.ModelAdmin):
     list_display = (
         'id',
-        'from_user',
+        'from_user_display',
         'requested_bace_display',
-        'to_mentor',
+        'to_mentor_display',
         'is_approved',
         'approved_at',
         'created_at',
@@ -243,7 +289,11 @@ class MentorRequestAdmin(admin.ModelAdmin):
     # exclude = ('requested_bace',)
     search_fields = (
         'from_user__first_name',
+        'from_user__last_name',
+        'from_user__initiated_name',
         'to_mentor__first_name',
+        'to_mentor__last_name',
+        'to_mentor__initiated_name',
         'from_user__member_id',
         'to_mentor__member_id',
         'from_user__center',
@@ -251,6 +301,14 @@ class MentorRequestAdmin(admin.ModelAdmin):
     )
     list_filter = ('is_approved', 'requested_bace', 'created_at', 'approved_at', MentorOnlyFilter)
     ordering = ('-created_at',)
+
+    @admin.display(description='From user', ordering='from_user__first_name')
+    def from_user_display(self, obj):
+        return format_profile_name(obj.from_user)
+
+    @admin.display(description='To mentor', ordering='to_mentor__first_name')
+    def to_mentor_display(self, obj):
+        return format_profile_name(obj.to_mentor)
 
     def get_queryset(self, request):
         queryset = super().get_queryset(request).select_related(

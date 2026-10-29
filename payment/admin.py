@@ -1,6 +1,7 @@
 from django.contrib import admin
 from .models import *
 from yatra.admin_utils import ActiveYatraAdminMixin
+from userProfile.admin_utils import format_profile_name
 
 
 @admin.register(Payment)
@@ -15,7 +16,7 @@ class PaymentAdmin(ActiveYatraAdminMixin, admin.ModelAdmin):
         'transaction_id', 
         'total_amount', 
         'proof',
-        'uploaded_by', 
+        'uploaded_by_display',
         'status',
         'processed_at',
         # 'uploaded_at',
@@ -23,9 +24,14 @@ class PaymentAdmin(ActiveYatraAdminMixin, admin.ModelAdmin):
         # 'verified_at'
     )
     list_filter = ('uploaded_at', 'processed_at', 'status')
-    search_fields = ('transaction_id', 'uploaded_by__first_name', 'uploaded_by__last_name')
+    search_fields = ('transaction_id', 'uploaded_by__first_name', 'uploaded_by__last_name', 'uploaded_by__initiated_name')
+    list_select_related = ('uploaded_by',)
     readonly_fields = ('uploaded_at',)
     actions = ["approve_selected", "reject_selected","under_review"]
+
+    @admin.display(description='Uploaded by', ordering='uploaded_by__first_name')
+    def uploaded_by_display(self, obj):
+        return format_profile_name(obj.uploaded_by)
 
     def approve_selected(self, request, queryset):
         for p in queryset:
