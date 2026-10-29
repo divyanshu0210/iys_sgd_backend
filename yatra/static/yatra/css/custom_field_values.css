@@ -1,0 +1,84 @@
+/* Only the nested custom-field value formset uses this compact layout. */
+.djn-group[data-inline-model="yatra-yatracustomfieldvalue"] .djn-table {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* Django forces scrollbars on tabular inlines even when nothing overflows. */
+.djn-group[data-inline-model="yatra-yatracustomfieldvalue"] .inline-related.tabular fieldset.module > table.djn-table {
+    overflow-x: auto;
+}
+
+.djn-group[data-inline-model="yatra-yatracustomfieldvalue"] .djn-table > thead {
+    display: none;
+}
+
+.djn-group[data-inline-model="yatra-yatracustomfieldvalue"] .djn-table > tbody.djn-inline-form:not(.djn-empty-form) {
+    display: block;
+    flex: 1 1 220px;
+    min-width: 0;
+    max-width: 320px;
+    padding: 8px;
+    border: 0;
+    box-sizing: border-box;
+}
+
+/* Keep nested-admin's prototype hidden until its Add button clones it. */
+.djn-group[data-inline-model="yatra-yatracustomfieldvalue"] .djn-table > tbody.djn-empty-form {
+    display: none !important;
+}
+
+.djn-group[data-inline-model="yatra-yatracustomfieldvalue"] .djn-table > tbody:not(.djn-inline-form) {
+    display: block;
+    flex: 0 0 100%;
+}
+
+.djn-group[data-inline-model="yatra-yatracustomfieldvalue"] tbody.djn-inline-form > tr.form-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+/* Override the admin's row and cell separators without affecting inputs. */
+.djn-group[data-inline-model="yatra-yatracustomfieldvalue"] tbody.djn-inline-form > tr,
+.djn-group[data-inline-model="yatra-yatracustomfieldvalue"] tbody.djn-inline-form > tr > td {
+    border: 0;
+}
+
+.djn-group[data-inline-model="yatra-yatracustomfieldvalue"] tbody.djn-inline-form td.original {
+    display: none;
+}
+
+.djn-group[data-inline-model="yatra-yatracustomfieldvalue"] tbody.djn-inline-form td.field-value {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0;
+}
+
+.djn-group[data-inline-model="yatra-yatracustomfieldvalue"] tbody.djn-inline-form td.field-value textarea {
+    width: 100% !important;
+    min-width: 0;
+    box-sizing: border-box;
+}
+
+.djn-group[data-inline-model="yatra-yatracustomfieldvalue"] tbody.djn-inline-form td.delete {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 0;
+}
+
+.djn-group[data-inline-model="yatra-yatracustomfieldvalue"] tbody.djn-inline-form td.delete:has(input[type="checkbox"])::before {
+    content: "Delete";
+    font-size: 11px;
+}
+
+@media (max-width: 480px) {
+    .djn-group[data-inline-model="yatra-yatracustomfieldvalue"] .djn-table > tbody.djn-inline-form:not(.djn-empty-form) {
+        flex-basis: 100%;
+        max-width: none;
+    }
+}

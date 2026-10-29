@@ -139,6 +139,9 @@ class RegistrationPolicyInline(nested_admin.NestedStackedInline):
 
 @admin.register(Yatra)
 class YatraAdmin(nested_admin.NestedModelAdmin):
+    class Media:
+        css = {"all": ("yatra/css/custom_field_values.css",)}
+
     list_display = ('id','title', 'location', 'start_date', 'end_date', 'capacity','payment_upi_id', 'created_at')
     search_fields = ('title', 'location')
     list_filter = ('start_date', 'location')
