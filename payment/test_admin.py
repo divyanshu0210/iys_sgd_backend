@@ -68,3 +68,14 @@ class PaymentAdminShowAllTests(TestCase):
                 self.assertEqual(filtered.context["cl"].result_count, 2)
                 self.assertContains(filtered, "Show active Yatras only")
                 self.assertIn("show_all=1", filtered.context["cl"].get_query_string({"p": 2}))
+
+    def test_registration_toolbar_shows_actions_for_selected_yatra(self):
+        yatra = Yatra.objects.get(title="Active")
+        url = reverse("admin:yatra_registration_yatraregistration_changelist")
+        response = self.client.get(url, {"yatra": str(yatra.pk)})
+        self.assertContains(response, "Show All")
+        self.assertContains(response, "Export All Data as Excel")
+        self.assertContains(response, "Manage Travel &amp; Accommodation")
+        self.assertContains(response, reverse("admin:yatra_registration_bulk_edit", args=[yatra.pk]))
+        self.assertNotContains(self.client.get(url), "Manage Travel &amp; Accommodation")
+        self.assertNotContains(self.client.get(self.url), "Manage Travel &amp; Accommodation")

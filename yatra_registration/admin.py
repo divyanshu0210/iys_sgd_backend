@@ -1,7 +1,6 @@
 from django.contrib import admin
 from django.contrib.admin import RelatedOnlyFieldListFilter
 from userProfile.admin_utils import export_as_excel
-from yatra_registration.bulk_import_admin_views import yatra_bulk_offline_import
 from .models import *
 from django.urls import path
 from .admin_views import *
@@ -262,7 +261,7 @@ class YatraRegistrationAdmin(ActiveYatraAdminMixin, admin.ModelAdmin):
 
 # ──────────────────────────────────────────────────────────────
 # for bulk edit view
-    change_list_template = "admin/yatra_registration/bulk_edit_changelist.html"
+    change_list_template = "admin/active_yatra_changelist.html"
     
     def get_urls(self):
         urls = super().get_urls()
@@ -271,11 +270,6 @@ class YatraRegistrationAdmin(ActiveYatraAdminMixin, admin.ModelAdmin):
                 'bulk-edit/<uuid:yatra_id>/',
                 self.admin_site.admin_view(bulk_edit_view),
                 name='yatra_registration_bulk_edit',
-            ),
-             path(
-                'bulk-offline-import/<uuid:yatra_id>/',
-                self.admin_site.admin_view(yatra_bulk_offline_import),
-                name='yatra_bulk_offline_import',
             ),
         ]
         return custom_urls + urls
@@ -292,7 +286,8 @@ class YatraRegistrationAdmin(ActiveYatraAdminMixin, admin.ModelAdmin):
 
         # Pass it to the template
         extra_context = extra_context or {}
-        extra_context['yatra'] = yatra
+        if yatra:
+            extra_context['manage_travel_url'] = reverse('admin:yatra_registration_bulk_edit', args=[yatra.id])
 
         return ActiveYatraAdminMixin.changelist_view(
             self, request, extra_context=extra_context

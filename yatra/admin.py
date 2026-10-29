@@ -1,6 +1,5 @@
 from django.contrib import admin
 from learning_material.models import Resource
-from yatra_registration.bulk_import_admin_views import yatra_bulk_offline_import
 from .models import *
 from django.urls import reverse
 from django.utils.html import format_html
