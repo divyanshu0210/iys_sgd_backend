@@ -1,5 +1,6 @@
 from datetime import timedelta
 from unittest import skipUnless
+from types import SimpleNamespace
 
 from django.apps import apps
 from django.contrib.auth.models import User
@@ -44,6 +45,22 @@ class PaymentAdminShowAllTests(TestCase):
         self.assertEqual(filtered.context["cl"].result_count, 2)
         self.assertContains(filtered, "Show active Yatras only")
         self.assertIn("show_all=1", filtered.context["cl"].get_query_string({"p": 2}))
+
+    def test_image_proof_has_hover_preview_and_other_files_keep_link(self):
+        from django.contrib import admin
+        from payment.admin import PaymentAdmin
+
+        payment_admin = PaymentAdmin(Payment, admin.site)
+        image = SimpleNamespace(proof=SimpleNamespace(name='payment_proofs/test.PNG', url='https://example.com/test.PNG'))
+        preview = payment_admin.proof_preview(image)
+        self.assertIn('payment-proof-preview__image', preview)
+        self.assertIn('https://example.com/test.PNG', preview)
+        self.assertIn('loading="lazy"', preview)
+        document = SimpleNamespace(proof=SimpleNamespace(name='payment_proofs/test.pdf', url='https://example.com/test.pdf'))
+        self.assertIn('test.pdf', payment_admin.proof_preview(document))
+        self.assertNotIn('<img', payment_admin.proof_preview(document))
+        self.assertEqual(payment_admin.proof_preview(SimpleNamespace(proof=None)), '—')
+        self.assertContains(self.client.get(self.url), 'payment/css/proof_preview.css')
 
     def test_show_all_toggle_preserves_existing_filter(self):
         response = self.client.get(self.url, {"status__exact": "rejected"})

@@ -125,6 +125,7 @@ class ProfileAdmin(admin.ModelAdmin):
 
     search_fields = (
         'member_id',
+        'user__username',
         'first_name',
         'last_name',
         'initiated_name',
