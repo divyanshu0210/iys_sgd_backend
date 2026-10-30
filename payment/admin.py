@@ -6,6 +6,40 @@ from yatra.admin_utils import ActiveYatraAdminMixin
 from userProfile.admin_utils import format_profile_name
 
 
+def _proof_preview(proof):
+    """Render the same safe, hoverable proof link for both admin lists."""
+    if not proof:
+        return '—'
+    url = proof.url
+    name = PurePosixPath(proof.name).name
+    if PurePosixPath(name).suffix.lower() not in {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.avif'}:
+        return format_html('<a href="{}" target="_blank" rel="noopener noreferrer">{}</a>', url, name)
+    return format_html(
+        '<span class="payment-proof-preview"><a href="{}" target="_blank" rel="noopener noreferrer">{}</a>'
+        '<span class="payment-proof-preview__image"><img src="{}" alt="Payment proof preview" loading="lazy"></span></span>',
+        url, name, url,
+    )
+
+
+@admin.register(Donation)
+class DonationAdmin(admin.ModelAdmin):
+    class Media:
+        css = {'all': ('payment/css/proof_preview.css',)}
+
+    list_display = ("transaction_id", "amount", "proof_preview", "donor_name", "email", "status", "created_at")
+    list_filter = ("status", "created_at")
+    search_fields = ("donor_name", "email", "mobile", "transaction_id")
+    readonly_fields = ("created_at",)
+    ordering = ("-created_at",)
+
+    @admin.display(description='Proof')
+    def proof_preview(self, obj):
+        return _proof_preview(obj.screenshot)
+
+    def has_add_permission(self, request):
+        return False
+
+
 @admin.register(Payment)
 class PaymentAdmin(ActiveYatraAdminMixin, admin.ModelAdmin):
     class Media:
@@ -36,17 +70,7 @@ class PaymentAdmin(ActiveYatraAdminMixin, admin.ModelAdmin):
 
     @admin.display(description='Proof')
     def proof_preview(self, obj):
-        if not obj.proof:
-            return '—'
-        url = obj.proof.url
-        name = PurePosixPath(obj.proof.name).name
-        if PurePosixPath(name).suffix.lower() not in {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.avif'}:
-            return format_html('<a href="{}" target="_blank" rel="noopener noreferrer">{}</a>', url, name)
-        return format_html(
-            '<span class="payment-proof-preview"><a href="{}" target="_blank" rel="noopener noreferrer">{}</a>'
-            '<span class="payment-proof-preview__image"><img src="{}" alt="Payment proof preview" loading="lazy"></span></span>',
-            url, name, url,
-        )
+        return _proof_preview(obj.proof)
 
     @admin.display(description='Uploaded by', ordering='uploaded_by__first_name')
     def uploaded_by_display(self, obj):

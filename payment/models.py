@@ -9,6 +9,32 @@ from payment.notifications import notify_payment_result
 
 # models.py - Add Payment model to track single transactions
 
+class Donation(models.Model):
+    """Donation and its payment screenshot."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    donor_name = models.CharField(max_length=255)
+    initiated_name = models.CharField(max_length=255, blank=True)
+    address = models.TextField()
+    mobile = models.CharField(max_length=30)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    pan = models.CharField(max_length=32, blank=True)
+    email = models.EmailField()
+    transaction_id = models.CharField(max_length=100, unique=True)
+    screenshot = models.ImageField(upload_to="donation_proofs/")
+    status = models.CharField(
+        max_length=20,
+        choices=[("under_review", "Under review"), ("verified", "Verified"), ("rejected", "Rejected")],
+        default="under_review",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.donor_name} — {self.transaction_id}"
+
+
 class Payment(models.Model):
     """
     Track a single payment transaction that can cover multiple installments
