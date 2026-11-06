@@ -15,7 +15,7 @@ class YatraFormFieldSerializer(serializers.ModelSerializer):
 class YatraInstallmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = YatraInstallment
-        fields = ['label', 'amount', 'order', 'start_date']
+        fields = ['label', 'amount', 'order', 'start_date', 'end_date']
 
 
 class RegistrationPhaseSerializer(serializers.ModelSerializer):
@@ -23,7 +23,7 @@ class RegistrationPhaseSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = RegistrationPhase
-        fields = ['id', 'name', 'start_date', 'end_date', 'installments']
+        fields = ['id', 'name', 'installments']
 
 class YatraContactCategorySerializer(serializers.ModelSerializer):
     class Meta:

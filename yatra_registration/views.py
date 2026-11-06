@@ -27,25 +27,26 @@ from django.db.models.functions import Concat, Lower
 from django.utils import timezone
 from django.db import transaction
 from uuid import UUID
+from .payment_rules import payment_block_reason
 from django.contrib.admin.views.decorators import staff_member_required
 from django.utils.decorators import method_decorator
 def active_registration_phase(yatra, on_date=None):
-    """Return the most recently started phase active on the given date."""
+    """Use the first installment as the registration window."""
     on_date = on_date or timezone.localdate()
-    return (
-        yatra.registration_phases
-        .filter(start_date__lte=on_date)
-        .filter(Q(end_date__isnull=True) | Q(end_date__gte=on_date))
-        .order_by("-start_date", "-id")
-        .first()
-    )
+    phases = []
+    for phase in yatra.registration_phases.prefetch_related('installments'):
+        first = next(iter(phase.installments.all()), None)
+        if first and first.start_date and first.start_date <= on_date and (not first.end_date or first.end_date >= on_date):
+            phases.append((first.start_date, phase.pk, phase))
+    return max(phases, default=(None, None, None))[2]
 
 
 def phase_for_registration(yatra, registration=None):
     """Keep an existing registration on its original phase forever."""
     if registration and registration.phase_id:
         has_phase_installment = registration.installments.filter(
-            installment__phase_id=registration.phase_id
+            Q(is_paid=True) | (Q(payment__isnull=False) & ~Q(payment__proof='')),
+            installment__phase_id=registration.phase_id,
         ).exists()
         if has_phase_installment:
             return registration.phase
@@ -57,16 +58,18 @@ def phase_for_registration(yatra, registration=None):
     if registration:
         existing_phase = (
             registration.installments
-            .filter(installment__phase__isnull=False)
+            .filter(Q(is_paid=True) | (Q(payment__isnull=False) & ~Q(payment__proof='')), installment__phase__isnull=False)
             .select_related("installment__phase")
             .first()
         )
         if existing_phase:
             return existing_phase.installment.phase
 
-        # Legacy registrations without phase-specific installments stay on
-        # the legacy installment set instead of moving into a new phase.
-        return None
+        # Preserve genuinely submitted legacy payments; an abandoned checkout
+        # can move to the currently open phase.
+        if registration.installments.filter(Q(is_paid=True) | (Q(payment__isnull=False) & ~Q(payment__proof='')), installment__phase__isnull=True).exists():
+            return None
+        return active_registration_phase(yatra)
 
     return active_registration_phase(yatra)
 
@@ -622,6 +625,7 @@ class YatraRegistrationView(APIView):
                                 "amount": float(inst.amount),
                                 "order": inst.order,
                                 "start_date": inst.start_date,
+                                "end_date": inst.end_date,
                                 "tag": tag,
                             })
 
@@ -694,6 +698,7 @@ class YatraRegistrationView(APIView):
                                     'amount': float(i.amount),
                                     'order': i.order,
                                     'start_date': i.start_date,
+                                    'end_date': i.end_date,
                                     'tag': 'due',
                                 }
                                 for i in profile_installments
@@ -732,6 +737,8 @@ class YatraRegistrationView(APIView):
             ...
         }
         """
+        if not getattr(request, '_atomic_checkout', False):
+            return Response({'error': 'Submit registration and payment proof together at checkout.'}, status=400)
         # Lock the Yatra while checking capacity so concurrent registrations
         # cannot both take the final place.
         yatra = get_object_or_404(Yatra.objects.select_for_update(), id=yatra_id)
@@ -770,7 +777,8 @@ class YatraRegistrationView(APIView):
                 .first()
             )
             registration_phase = phase_for_registration(yatra, existing_registration)
-            if existing_registration is None:
+            started = bool(existing_registration and existing_registration.installments.filter(Q(is_paid=True) | (Q(payment__isnull=False) & ~Q(payment__proof=''))).exists())
+            if not started:
                 if not yatra.is_registration_open or yatra.close_yatra:
                     errors.append('Registration is closed for this Yatra.')
                     continue
@@ -780,24 +788,12 @@ class YatraRegistrationView(APIView):
                 active_count = YatraRegistration.objects.filter(yatra=yatra).exclude(
                     status__in=['cancelled', 'refunded', 'substituted']
                 ).count()
-                if active_count >= yatra.capacity:
+                if existing_registration is None and active_count >= yatra.capacity:
                     errors.append('This Yatra is at full capacity.')
                     continue
                 registration_phase = active_registration_phase(yatra)
-            elif existing_registration.status in {'cancelled', 'refunded', 'substituted', 'attended'}:
+            if existing_registration and existing_registration.status in {'cancelled', 'refunded', 'substituted', 'attended'}:
                 errors.append(f'Registration for {profile} can no longer be changed.')
-                continue
-
-            if (
-                existing_registration
-                and registration_phase
-                and registration_phase.end_date
-                and registration_phase.end_date < today
-                and existing_registration.installments.filter(is_paid=False).exists()
-            ):
-                errors.append(
-                    f'Registration has closed for {profile}; pending installments cannot be updated.'
-                )
                 continue
 
             phase_installments = installments_for_phase(yatra, registration_phase)
@@ -863,6 +859,7 @@ class YatraRegistrationView(APIView):
                 required_labels.update(
                     installment.label
                     for installment in phase_installments[: max(mandatory_indexes) + 1]
+                    if not existing_registration or existing_registration.phase_id != getattr(registration_phase, 'id', None) or not payment_block_reason(existing_registration, installment, today)
                 )
             missing_required = sorted(required_labels - existing_labels - set(installments_selected))
             if missing_required:
@@ -1048,6 +1045,17 @@ class YatraRegistrationDetailView(APIView):
                 yatra_id=yatra_id,
                 registered_for_id=profile_id
             )
+            phase = phase_for_registration(registration.yatra, registration)
+            if phase and phase.pk != registration.phase_id:
+                installments = installments_for_phase(registration.yatra, phase)
+                return Response({
+                    'id': str(registration.pk), 'form_data': registration.form_data,
+                    'phase': phase_payload(phase),
+                    'installments': [{'id': None, 'label': i.label, 'amount': i.amount,
+                                      'order': i.order, 'start_date': i.start_date,
+                                      'end_date': i.end_date, 'is_paid': False,
+                                      'tag': 'due', 'payment': None} for i in installments],
+                })
             serializer = YatraRegistrationDetailSerializer(registration,context={"request": request})
             return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -1074,6 +1082,7 @@ class YatraRegistrationDetailView(APIView):
                         "amount": inst.amount,
                         "order": inst.order,
                         "start_date": inst.start_date,
+                        "end_date": inst.end_date,
                         "is_paid": False,
                         "tag": "due",
                         "paid_at": None,

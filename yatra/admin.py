@@ -21,7 +21,7 @@ class YatraFormFieldInline(nested_admin.NestedTabularInline):
 class YatraInstallmentInline(nested_admin.NestedTabularInline):
     model = YatraInstallment
     extra = 0
-    fields = ['label', 'amount', 'order', 'start_date']
+    fields = ['label', 'amount', 'order', 'start_date', 'end_date']
     verbose_name = "Legacy installment (no phase)"
     verbose_name_plural = "Legacy installments (no phase)"
 
@@ -33,14 +33,14 @@ class PhaseInstallmentInline(nested_admin.NestedTabularInline):
     model = YatraInstallment
     extra = 0
     fk_name = "phase"
-    fields = ['label', 'amount', 'order', 'start_date']
+    fields = ['label', 'amount', 'order', 'start_date', 'end_date']
     form = PhaseInstallmentForm
 
 
 class RegistrationPhaseInline(nested_admin.NestedStackedInline):
     model = RegistrationPhase
     extra = 0
-    fields = ['name', 'start_date', 'end_date']
+    fields = ['name']
     inlines = [PhaseInstallmentInline]
 
 

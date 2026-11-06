@@ -68,6 +68,7 @@ class InstallmentSerializer(serializers.ModelSerializer):
     amount = serializers.DecimalField(source='installment.amount', max_digits=10, decimal_places=2, read_only=True)
     order = serializers.IntegerField(source='installment.order', read_only=True)
     start_date = serializers.DateField(source='installment.start_date', read_only=True)
+    end_date = serializers.DateField(source='installment.end_date', read_only=True)
     payment = PaymentSerializer(read_only=True)
     tag = serializers.SerializerMethodField()
 
@@ -82,6 +83,7 @@ class InstallmentSerializer(serializers.ModelSerializer):
             'amount',
             'order',
             'start_date',
+            'end_date',
             'tag',
             'is_paid',
             'paid_at',
@@ -95,13 +97,17 @@ class InstallmentSerializer(serializers.ModelSerializer):
 class RegistrationPhaseSummarySerializer(serializers.ModelSerializer):
     class Meta:
         model = RegistrationPhase
-        fields = ['id', 'name', 'start_date', 'end_date']
+        fields = ['id', 'name']
 
 class YatraRegistrationDetailSerializer(serializers.ModelSerializer):
     registered_for = serializers.StringRelatedField()
     yatra = serializers.StringRelatedField()
-    installments = InstallmentSerializer(many=True, read_only=True)
+    installments = serializers.SerializerMethodField()
     phase = RegistrationPhaseSummarySerializer(read_only=True)
+
+    def get_installments(self, obj):
+        records = obj.installments.filter(installment__phase_id=obj.phase_id, installment__yatra_id=obj.yatra_id).select_related('installment', 'payment').order_by('installment__order', 'installment__id')
+        return InstallmentSerializer(records, many=True, context=self.context).data
 
     class Meta:
         model = YatraRegistration

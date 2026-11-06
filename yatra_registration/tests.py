@@ -19,11 +19,11 @@ class RegistrationPhaseAlignmentTests(TestCase):
             title="Phase Yatra", description="Test", start_date=date(2027, 1, 1),
             end_date=date(2027, 1, 2), location="Test", capacity=10,
         )
-        self.phase = RegistrationPhase.objects.create(yatra=self.yatra, name="One", start_date=date(2026, 1, 1))
-        other_phase = RegistrationPhase.objects.create(yatra=self.yatra, name="Two", start_date=date(2026, 2, 1))
-        self.first = YatraInstallment.objects.create(yatra=self.yatra, phase=self.phase, label="First", amount=3500)
+        self.phase = RegistrationPhase.objects.create(yatra=self.yatra, name="One")
+        other_phase = RegistrationPhase.objects.create(yatra=self.yatra, name="Two")
+        self.first = YatraInstallment.objects.create(yatra=self.yatra, phase=self.phase, label="First", amount=3500, start_date=date(2026, 1, 1))
         self.second = YatraInstallment.objects.create(yatra=self.yatra, phase=self.phase, label="Second", amount=3000)
-        self.other = YatraInstallment.objects.create(yatra=self.yatra, phase=other_phase, label="Other phase", amount=5500)
+        self.other = YatraInstallment.objects.create(yatra=self.yatra, phase=other_phase, label="Other phase", amount=5500, start_date=date(2026, 2, 1))
         self.legacy = YatraInstallment.objects.create(yatra=self.yatra, label="Legacy", amount=400)
         self.registration = YatraRegistration.objects.create(
             yatra=self.yatra, phase=self.phase, registered_by=self.profile, registered_for=self.profile,
@@ -74,6 +74,42 @@ class RegistrationPhaseAlignmentTests(TestCase):
         payment = Payment.objects.create(transaction_id='phase-email', total_amount=3500, uploaded_by=self.profile)
         YatraRegistrationInstallment.objects.create(registration=self.registration, installment=self.first, payment=payment)
         self.assertEqual([row['installment_name'] for row in _payment_status_rows(payment)], ['First', 'Second'])
+
+    def test_registration_window_uses_first_installment(self):
+        from yatra_registration.views import active_registration_phase
+        self.first.end_date = date(2026, 1, 31)
+        self.first.save()
+        self.assertEqual(active_registration_phase(self.yatra, date(2026, 1, 31)), self.phase)
+        self.assertEqual(active_registration_phase(self.yatra, date(2026, 2, 1)).name, 'Two')
+
+    def test_unsubmitted_checkout_moves_to_active_phase(self):
+        from yatra_registration.views import phase_for_registration
+        YatraRegistrationInstallment.objects.create(registration=self.registration, installment=self.first)
+        with patch('yatra_registration.views.active_registration_phase', return_value=self.other.phase):
+            self.assertEqual(phase_for_registration(self.yatra, self.registration), self.other.phase)
+
+    def test_submitted_proof_keeps_original_phase(self):
+        from payment.models import Payment
+        from yatra_registration.views import phase_for_registration
+        payment = Payment.objects.create(transaction_id='submitted-phase', total_amount=3500, uploaded_by=self.profile, proof='proof.jpg', status='rejected')
+        YatraRegistrationInstallment.objects.create(registration=self.registration, installment=self.first, payment=payment)
+        self.assertEqual(phase_for_registration(self.yatra, self.registration), self.phase)
+
+    def test_rejected_proof_can_retry_after_deadline_but_blocks_later(self):
+        from payment.models import Payment
+        from yatra_registration.payment_rules import payment_block_reason
+        self.first.end_date = date(2026, 1, 5)
+        self.first.save()
+        payment = Payment.objects.create(transaction_id='rejected-phase', total_amount=3500, uploaded_by=self.profile, proof='proof.jpg', status='rejected')
+        record = YatraRegistrationInstallment.objects.create(registration=self.registration, installment=self.first, payment=payment)
+        self.assertIsNone(payment_block_reason(self.registration, self.first, date(2026, 1, 10)))
+        self.assertIn('Resubmit', payment_block_reason(self.registration, self.second, date(2026, 1, 10)))
+        payment.status = 'under_review'
+        payment.save()
+        self.assertIsNone(payment_block_reason(self.registration, self.second, date(2026, 1, 10)))
+        self.second.end_date = date(2026, 1, 9)
+        self.second.save()
+        self.assertIn('deadline', payment_block_reason(self.registration, self.second, date(2026, 1, 10)))
 
 
 class YatraReviewerBatchNotificationTests(SimpleTestCase):
@@ -204,12 +240,10 @@ class RegistrationSecurityTests(TestCase):
             "installments_details": [{"label": "First", "is_paid": True}],
         }}
 
-    def test_client_cannot_mark_installment_paid(self):
+    def test_registration_cannot_be_created_without_checkout(self):
         response = self.client.post(self.url, self.payload(self.profile), format="json")
-        self.assertEqual(response.status_code, 200)
-        installment = YatraRegistrationInstallment.objects.get(registration__registered_for=self.profile)
-        self.assertFalse(installment.is_paid)
-        self.assertIsNone(installment.verified_by)
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(YatraRegistration.objects.filter(registered_for=self.profile).exists())
 
     def test_open_yatra_does_not_allow_registering_unrelated_profile(self):
         response = self.client.post(self.url, self.payload(self.other), format="json")

@@ -11,6 +11,7 @@ from userProfile.models import *
 import uuid
 from payment.models import *
 from yatra_registration.models import YatraEligibility, YatraRegistration
+from django.db.models import Q
 
 
 # Create your views here.
@@ -66,12 +67,12 @@ class YatraListView(APIView):
                 )
                 process_yatra_ids.update(
                     YatraRegistration.objects.filter(
-                        registered_for_id=profile_id
+                        Q(registered_for_id=profile_id) | Q(registered_by_id=profile_id)
                     ).values_list('yatra_id', flat=True)
                 )
 
         for item in data:
-            item['registration_in_progress'] = item['id'] in process_yatra_ids
+            item['registration_in_progress'] = str(item['id']) in {str(yatra_id) for yatra_id in process_yatra_ids}
 
         return Response(data)
 

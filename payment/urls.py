@@ -8,6 +8,7 @@ from .donation_api import DonationSubmitView
 urlpatterns = [
     path('donations/', DonationSubmitView.as_view(), name='donation-submit'),
     path('<uuid:yatra_id>/batch-payment-proof/', BatchPaymentProofView.as_view(), name='batch-payment-proof'),
+    path('<uuid:yatra_id>/checkout/', AtomicCheckoutView.as_view(), name='atomic-checkout'),
     path(
             '<uuid:payment_id>/upload-screenshot/',
             UploadPaymentScreenshotView.as_view(),

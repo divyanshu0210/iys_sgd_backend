@@ -59,20 +59,13 @@ class RegistrationPhase(models.Model):
         Yatra, on_delete=models.CASCADE, related_name="registration_phases"
     )
     name = models.CharField(max_length=150)
-    start_date = models.DateField()
-    end_date = models.DateField(blank=True, null=True)
-
     class Meta:
-        ordering = ["start_date", "id"]
+        ordering = ["id"]
         constraints = [
             models.UniqueConstraint(
                 fields=["yatra", "name"], name="unique_yatra_registration_phase_name"
             )
         ]
-
-    def clean(self):
-        if self.end_date and self.end_date < self.start_date:
-            raise ValidationError("Phase end date cannot be before its start date.")
 
     def __str__(self):
         return f"{self.yatra.title} → {self.name}"
@@ -130,6 +123,11 @@ class YatraInstallment(models.Model):
         null=True,
         help_text="After this date, this installment becomes compulsory for this phase.",
     )
+    end_date = models.DateField(blank=True, null=True, help_text="Last day to submit payment proof; the first installment also closes registration for this phase.")
+
+    def clean(self):
+        if self.start_date and self.end_date and self.end_date < self.start_date:
+            raise ValidationError("Installment end date cannot be before its start date.")
 
     class Meta:
         ordering = ['order', 'id']
@@ -147,17 +145,6 @@ class YatraInstallment(models.Model):
         if self.phase_id:
             self.yatra_id = self.phase.yatra_id
 
-            # The earliest installment in a phase always starts with the
-            # phase. This prevents its date from drifting independently.
-            earlier_installment = (
-                YatraInstallment.objects
-                .filter(phase_id=self.phase_id)
-                .exclude(pk=self.pk)
-                .order_by('order', 'id')
-                .first()
-            )
-            if earlier_installment is None or self.order <= earlier_installment.order:
-                self.start_date = self.phase.start_date
         super().save(*args, **kwargs)
 
     def __str__(self):
