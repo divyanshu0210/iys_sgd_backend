@@ -10,6 +10,7 @@ from django import forms
 from html import unescape
 from uuid import UUID
 from django.utils.html import strip_tags
+from yatra_registration.models import YatraRegistration
 
 
 class BaceAdminForm(forms.ModelForm):
@@ -119,8 +120,8 @@ class ProfileAdmin(admin.ModelAdmin):
         'spiritual_master',
         'created_at',
         'mentor_display',
-        'mentor_request_approved',
-        'mentor_request_approved_at',
+        'mentor_request_status',
+        'yatra_registrations_display',
     )
 
     search_fields = (
@@ -199,15 +200,36 @@ class ProfileAdmin(admin.ModelAdmin):
         return format_profile_name(obj.mentor)
     mentor_display.short_description = "Mentor Name"
 
-    def mentor_request_approved(self, obj):
+    @admin.display(description="Mentor request status")
+    def mentor_request_status(self, obj):
         if obj.last_request_is_approved is None:
             return "—"
-        return "✅ Yes" if obj.last_request_is_approved else "❌ No"
+        if obj.last_request_is_approved:
+            label = ""
+            icon = "✅"
+            action_at = obj.last_request_approved_at
+        elif obj.last_request_is_rejected:
+            label = ""
+            icon = "❌"
+            action_at = obj.last_request_rejected_at
+        else:
+            return "⏳ Pending"
 
-    def mentor_request_approved_at(self, obj):
-        if obj.last_request_approved_at:
-            return localtime(obj.last_request_approved_at).strftime("%d %b %Y, %H:%M")
-        return "—"
+        timestamp = (
+            localtime(action_at).strftime("%d %b %Y, %H:%M")
+            if action_at else "date unavailable"
+        )
+        return f"{icon} {label} ({timestamp})"
+
+    @admin.display(description="Yatra registrations")
+    def yatra_registrations_display(self, obj):
+        registrations = getattr(obj, 'admin_yatra_registrations', ())
+        if not registrations:
+            return "—"
+        return ', '.join(
+            f'{registration.yatra.title} ({registration.get_status_display()})'
+            for registration in registrations
+        )
 
      # ---------------------------
     # Profile photo preview
@@ -233,11 +255,16 @@ class ProfileAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         qs = super().get_queryset(request)
 
-        qs = qs.select_related('mentor','user')
+        qs = qs.select_related('mentor', 'user').prefetch_related(
+            Prefetch(
+                'registrations_received',
+                queryset=YatraRegistration.objects.select_related('yatra').order_by('yatra__title'),
+                to_attr='admin_yatra_registrations',
+            )
+        )
 
         last_request_qs = MentorRequest.objects.filter(
             from_user=OuterRef('pk'),
-            to_mentor=OuterRef('mentor_id'),
         ).order_by('-created_at')
 
         qs = qs.annotate(
@@ -247,6 +274,14 @@ class ProfileAdmin(admin.ModelAdmin):
             ),
             last_request_approved_at=Subquery(
                 last_request_qs.values('approved_at')[:1],
+                output_field=DateTimeField(),
+            ),
+            last_request_is_rejected=Subquery(
+                last_request_qs.values('is_rejected')[:1],
+                output_field=BooleanField(),
+            ),
+            last_request_rejected_at=Subquery(
+                last_request_qs.values('rejected_at')[:1],
                 output_field=DateTimeField(),
             ),
         )
@@ -282,8 +317,7 @@ class MentorRequestAdmin(admin.ModelAdmin):
         'from_user_display',
         'requested_bace_display',
         'to_mentor_display',
-        'is_approved',
-        'approved_at',
+        'status_display',
         'created_at',
     )
     readonly_fields = ('requested_bace_display',)
@@ -310,6 +344,25 @@ class MentorRequestAdmin(admin.ModelAdmin):
     @admin.display(description='To mentor', ordering='to_mentor__first_name')
     def to_mentor_display(self, obj):
         return format_profile_name(obj.to_mentor)
+
+    @admin.display(description='Status')
+    def status_display(self, obj):
+        if obj.is_approved:
+            label = 'Approved'
+            icon = '✅'
+            action_at = obj.approved_at
+        elif obj.is_rejected:
+            label = 'Rejected'
+            icon = '❌'
+            action_at = obj.rejected_at
+        else:
+            return '⏳ Pending'
+
+        timestamp = (
+            localtime(action_at).strftime('%d %b %Y, %H:%M')
+            if action_at else 'date unavailable'
+        )
+        return f'{icon} {label} ({timestamp})'
 
     def get_queryset(self, request):
         queryset = super().get_queryset(request).select_related(

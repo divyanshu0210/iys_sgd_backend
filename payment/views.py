@@ -182,35 +182,3 @@ class AtomicCheckoutView(APIView):
         return Response({'payment_id': payment_id, 'message': 'Payment proof submitted successfully.'}, status=201)
     
 
-class UploadPaymentScreenshotView(APIView):
-    """
-    Attach screenshot to an existing Payment
-    """
-    permission_classes = [IsAuthenticated]
-    parser_classes = [MultiPartParser, FormParser]
-
-    @transaction.atomic
-    def post(self, request, payment_id):
-        payment = get_object_or_404(Payment, id=payment_id, uploaded_by=request.user.profile)
-
-        if payment.status != "under_review":
-            return Response({"error": "This payment can no longer be changed."}, status=400)
-
-        file = request.FILES.get("screenshot")
-        if not file:
-            return Response({"error": "No screenshot provided."}, status=status.HTTP_400_BAD_REQUEST)
-
-        for inst in payment.installments.select_related('registration__phase', 'registration__yatra', 'installment'):
-            reason = payment_block_reason(inst.registration, inst.installment)
-            if reason:
-                return Response({'error': reason}, status=400)
-
-        payment.proof = file
-        payment.save(update_fields=["proof"])
-        transaction.on_commit(lambda: notify_payment_submitted(payment), robust=True)
-
-        return Response({
-            "message": "Screenshot uploaded successfully.",
-            "proof_url": request.build_absolute_uri(payment.proof.url)
-        })
-

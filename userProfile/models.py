@@ -162,6 +162,9 @@ class MentorRequest(models.Model):
     def save(self, *args, **kwargs):
         if self.is_approved and self.approved_at is None:
             self.approved_at = timezone.now()
+            update_fields = kwargs.get('update_fields')
+            if update_fields is not None and 'approved_at' not in update_fields:
+                kwargs['update_fields'] = list(update_fields) + ['approved_at']
         super().save(*args, **kwargs)
 
 

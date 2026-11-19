@@ -3,8 +3,11 @@ from learning_material.models import Resource
 from .models import *
 from django.urls import reverse
 from django.utils.html import format_html
+from django.utils.numberformat import format as format_number
 from django.urls import path
-from django.db.models import Prefetch
+from decimal import Decimal
+from django.db.models import Count, DecimalField, Exists, F, IntegerField, OuterRef, Prefetch, Q, Subquery, Sum, Value
+from django.db.models.functions import Coalesce
 import nested_admin
 from .admin_forms import *
 
@@ -142,9 +145,9 @@ class YatraAdmin(nested_admin.NestedModelAdmin):
     class Media:
         css = {"all": ("yatra/css/custom_field_values.css",)}
 
-    list_display = ('id','title', 'location', 'start_date', 'end_date', 'capacity','payment_upi_id', 'created_at')
-    search_fields = ('title', 'location')
-    list_filter = ('start_date', 'location')
+    list_display = ('id', 'title', 'start_date', 'end_date', 'registered_capacity', 'total_collection', 'created_at')
+    search_fields = ('title',)
+    list_filter = ('title',)
     ordering = ('-created_at',)
     readonly_fields = ('poster_preview',)
     inlines = [RegistrationPolicyInline, YatraFormFieldInline, RegistrationPhaseInline,
@@ -153,8 +156,74 @@ class YatraAdmin(nested_admin.NestedModelAdmin):
                YatraContactCategoryInline, YatraImportantNoteInline,YatraResourceInline]
 
     def get_queryset(self, request):
+        from payment.models import Payment
+        from yatra_registration.models import YatraRegistration, YatraRegistrationInstallment
+
+        started_installments = YatraRegistrationInstallment.objects.filter(
+            Q(is_paid=True) | (Q(payment__isnull=False) & ~Q(payment__proof='')),
+            registration_id=OuterRef('pk'),
+        )
+        started_registrations = (
+            YatraRegistration.objects.filter(yatra_id=OuterRef('pk'))
+            .exclude(status__in=['cancelled', 'refunded'])
+            .filter(Q(status='substituted') | Exists(started_installments))
+            .order_by()
+            .values('yatra_id')
+            .annotate(total=Count('pk'))
+            .values('total')
+        )
+        cancelled_registrations = (
+            YatraRegistration.objects.filter(
+                yatra_id=OuterRef('pk'), status__in=['cancelled', 'refunded'],
+            )
+            .filter(Exists(started_installments))
+            .order_by()
+            .values('yatra_id')
+            .annotate(total=Count('pk'))
+            .values('total')
+        )
+
+        linked_installments = YatraRegistrationInstallment.objects.filter(
+            payment_id=OuterRef('pk'),
+            registration__yatra_id=OuterRef(OuterRef('pk')),
+        )
+        verified_totals = (
+            Payment.objects.filter(status='verified')
+            .filter(Exists(linked_installments))
+            .order_by()
+            .annotate(group_key=Value(1))
+            .values('group_key')
+            .annotate(total=Sum('total_amount'))
+            .values('total')
+        )
+        cancelled_totals = (
+            YatraRegistrationInstallment.objects.filter(
+                registration__yatra_id=OuterRef('pk'),
+                registration__status__in=['cancelled', 'refunded'],
+                payment__status='verified',
+            )
+            .order_by()
+            .values('registration__yatra_id')
+            .annotate(total=Sum('installment__amount'))
+            .values('total')
+        )
+        amount_field = DecimalField(max_digits=20, decimal_places=2)
         return (
             super().get_queryset(request)
+            .annotate(started_registration_count=Coalesce(
+                Subquery(started_registrations, output_field=IntegerField()),
+                Value(0),
+            ), cancelled_registration_count=Coalesce(
+                Subquery(cancelled_registrations, output_field=IntegerField()),
+                Value(0),
+            ), verified_collection=Coalesce(
+                Subquery(verified_totals, output_field=amount_field),
+                Value(Decimal('0.00'), output_field=amount_field),
+            ), cancelled_collection=Coalesce(
+                Subquery(cancelled_totals, output_field=amount_field),
+                Value(Decimal('0.00'), output_field=amount_field),
+            ))
+            .annotate(active_collection=F('verified_collection') - F('cancelled_collection'))
             .select_related('registration_policy')
             .prefetch_related(
                 Prefetch(
@@ -164,6 +233,18 @@ class YatraAdmin(nested_admin.NestedModelAdmin):
                 )
             )
         )
+
+    @admin.display(description='Registered / capacity', ordering='started_registration_count')
+    def registered_capacity(self, obj):
+        return f'{obj.started_registration_count} / {obj.capacity} ({obj.cancelled_registration_count} cancelled/refunded)'
+
+    @admin.display(description='Total collection', ordering='active_collection')
+    def total_collection(self, obj):
+        def indian_amount(amount):
+            return format_number(amount, '.', decimal_pos=2, grouping=(3, 2, 0),
+                                 thousand_sep=',', force_grouping=True)
+
+        return f"₹{indian_amount(obj.active_collection)} (₹{indian_amount(obj.cancelled_collection)} cancelled/refunded)"
 
     def get_inline_instances(self, request, obj=None):
         inline_instances = super().get_inline_instances(request, obj)

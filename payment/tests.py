@@ -257,7 +257,7 @@ class BatchPaymentSecurityTests(TestCase):
         self.assertFalse(YatraRegistration.objects.filter(yatra=self.yatra, registered_for=self.profile).exists())
         self.assertFalse(Payment.objects.exists())
 
-    def test_old_payment_endpoint_cannot_create_unfinished_payment(self):
+    def test_old_batch_payment_endpoint_is_removed(self):
         response = self.client.post(f'/payments/{self.yatra.pk}/batch-payment-proof/', {}, format='json')
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, 404)
         self.assertFalse(Payment.objects.exists())

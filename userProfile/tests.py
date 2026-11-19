@@ -47,6 +47,8 @@ class ProfileReviewBatchTests(TestCase):
         for request in self.requests:
             request.is_approved = True
             request.save(update_fields=["is_approved"])
+        self.requests[0].refresh_from_db()
+        self.assertIsNotNone(self.requests[0].approved_at)
         self.first.profile_verification_status = "verified"
         self.first.save(update_fields=["profile_verification_status"])
         self.second.profile_verification_status = "pending"
@@ -87,6 +89,9 @@ class ProfileReviewBatchTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.first.refresh_from_db()
         self.assertEqual(self.first.mentor, self.second_counsellor)
+        self.requests[0].refresh_from_db()
+        self.assertTrue(self.requests[0].is_approved)
+        self.assertIsNotNone(self.requests[0].approved_at)
         self.assertEqual(user_mail.call_count, 1)
         self.assertEqual(reviewer_mail.call_count, 1)
 

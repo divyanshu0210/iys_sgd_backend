@@ -374,7 +374,7 @@ class MentorRequestView(APIView):
                 if approved:
                     current_mentor = mentee.mentor
                     req.is_approved = True
-                    req.save(update_fields=["is_approved"])
+                    req.save(update_fields=["is_approved", "approved_at"])
                     bace = current_baces[req.pk]
                     mentee.mentor = bace.counsellor if bace else (current_mentor or reviewer)
                     mentee.user_type = "devotee"
