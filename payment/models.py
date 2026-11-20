@@ -9,6 +9,36 @@ from payment.notifications import notify_payment_result
 
 # models.py - Add Payment model to track single transactions
 
+class PaymentAccount(models.Model):
+    """The public account used for standalone donations and as a fallback."""
+    id = models.AutoField(primary_key=True)
+    account_name = models.CharField(max_length=255, blank=True, default="")
+    account_number = models.CharField(max_length=100, blank=True, default="")
+    ifsc = models.CharField(max_length=20, blank=True, default="")
+    bank_name = models.CharField(max_length=255, blank=True, default="")
+    upi_id = models.CharField(max_length=255, blank=True, default="")
+    is_global = models.BooleanField(default=False)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['is_global'], condition=models.Q(is_global=True),
+                name='payment_single_global_account',
+            ),
+        ]
+
+    def __str__(self):
+        details = [self.account_name.strip(), self.bank_name.strip()]
+        if self.account_number:
+            details.append(f"A/C ending {self.account_number[-4:]}")
+        if self.upi_id:
+            details.append(f"UPI: {self.upi_id}")
+        if self.is_global:
+            details.append('Global')
+        label = ' — '.join(part for part in details if part)
+        return f"{label or 'Payment account'} (#{self.pk})" if self.pk else label or 'Payment account'
+
+
 class Donation(models.Model):
     """Donation and its payment screenshot."""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -67,6 +97,7 @@ class Payment(models.Model):
     )
     processed_at  = models.DateTimeField(null=True, blank=True)
     notes = models.TextField(blank=True, null=True)
+    payment_account_snapshot = models.JSONField(null=True, blank=True, editable=False)
 
     def __str__(self):
         return f"Payment {self.transaction_id} - ₹{self.total_amount}"

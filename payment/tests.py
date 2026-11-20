@@ -99,12 +99,13 @@ class BatchPaymentSecurityTests(TestCase):
         self.client.force_authenticate(self.user)
         self.url = f"/payments/{self.yatra.pk}/checkout/"
 
-    def submit(self, profile, amount="100.00", labels=None, transaction_id="transaction-1"):
+    def submit(self, profile, amount="100.00", labels=None, transaction_id="transaction-1", account_snapshot=None):
         selected = labels if labels is not None else ['First']
         return self.client.post(self.url, {
             "transaction_id": transaction_id, "total_amount": amount,
             "registration_installments": json.dumps([{"profile_id": str(profile.pk), "installments": selected}]),
             "registrations": json.dumps({str(profile.pk): {'form_fields': {}, 'installments_selected': selected}}),
+            "payment_account_snapshot": json.dumps(account_snapshot) if account_snapshot is not None else '',
             "screenshot": SimpleUploadedFile('proof.png', b'proof', content_type='image/png'),
         }, format="multipart")
 
@@ -133,6 +134,32 @@ class BatchPaymentSecurityTests(TestCase):
         installment = YatraRegistrationInstallment.objects.get(registration__registered_for=self.profile)
         self.assertEqual(installment.payment.total_amount, Decimal("100.00"))
         self.assertFalse(installment.is_paid)
+
+    def test_checkout_saves_account_snapshot_and_preserves_it_during_review(self):
+        response = self.submit(self.profile, account_snapshot={
+            'payment_account_id': 42,
+            'payment_account_name': 'Yatra Fund', 'payment_account_number': '12345678',
+            'payment_bank_name': 'SBI', 'payment_ifsc': 'SBIN0000123', 'payment_upi_id': 'fund@upi',
+        })
+        self.assertEqual(response.status_code, 201)
+        payment = Payment.objects.get(pk=response.data['payment_id'])
+        self.assertEqual(payment.payment_account_snapshot['account_id'], 42)
+        self.assertEqual(payment.payment_account_snapshot['account_name'], 'Yatra Fund')
+        self.assertEqual(payment.payment_account_snapshot['account_number'], '12345678')
+        self.assertFalse(payment.notes)
+        payment.approve(self.profile, 'Approved by reviewer')
+        payment.refresh_from_db()
+        self.assertEqual(payment.payment_account_snapshot['account_name'], 'Yatra Fund')
+        self.assertIn('Approved by reviewer', payment.notes)
+        payment.reject(self.profile, 'Rejected by reviewer')
+        payment.refresh_from_db()
+        self.assertEqual(payment.payment_account_snapshot['account_name'], 'Yatra Fund')
+        self.assertIn('Rejected by reviewer', payment.notes)
+
+    def test_checkout_without_account_snapshot_does_not_invent_account(self):
+        response = self.submit(self.profile)
+        self.assertEqual(response.status_code, 201)
+        self.assertIsNone(Payment.objects.get(pk=response.data['payment_id']).payment_account_snapshot)
 
     def test_paid_installment_cannot_be_replaced(self):
         installment = YatraRegistrationInstallment.objects.get(registration__registered_for=self.profile)

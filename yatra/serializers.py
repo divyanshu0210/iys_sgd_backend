@@ -1,6 +1,13 @@
 from rest_framework import serializers
 from .models import *
 from payment.serializers import PaymentSerializer
+from payment.models import PaymentAccount
+
+
+class PaymentAccountSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PaymentAccount
+        fields = ['id', 'account_name', 'account_number', 'ifsc', 'bank_name', 'upi_id']
 
 class YatraFormFieldSerializer(serializers.ModelSerializer):
     options = serializers.SerializerMethodField()
@@ -43,6 +50,7 @@ class RegistrationPolicySerializer(serializers.ModelSerializer):
 
 
 class YatraSerializer(serializers.ModelSerializer):
+    payment_account = PaymentAccountSerializer(read_only=True)
     form_fields = YatraFormFieldSerializer(many=True, read_only=True)
     installments = serializers.SerializerMethodField()
     registration_phases = RegistrationPhaseSerializer(many=True, read_only=True)
@@ -54,7 +62,7 @@ class YatraSerializer(serializers.ModelSerializer):
         model = Yatra
         fields = [
             'id', 'title', 'description', 'start_date', 'end_date',
-            'location', 'capacity', 'is_registration_open','payment_upi_id',
+            'location', 'capacity', 'is_registration_open', 'payment_account',
             'form_fields', 'installments', 'registration_phases', 'substitution_fee', 'cancellation_fee',
             'is_rcs_download_open','is_substitution_open','is_cancellation_open',  'close_yatra',
              'payment_refund_date',

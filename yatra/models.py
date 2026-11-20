@@ -1,7 +1,7 @@
 from django.db import models
 import uuid
 from userProfile.models import Profile
-from payment.models import Payment
+from payment.models import Payment, PaymentAccount
 from django.core.exceptions import ValidationError
 
 
@@ -19,7 +19,10 @@ class Yatra(models.Model):
     is_substitution_open = models.BooleanField(default=False) 
     is_cancellation_open = models.BooleanField(default=False)  # ✅ NEW
     close_yatra = models.BooleanField(default=False)
-    payment_upi_id = models.CharField(max_length=255, blank=True, null=True,default="")  
+    payment_account = models.ForeignKey(
+        PaymentAccount, blank=True, null=True, on_delete=models.SET_NULL,
+        related_name='yatras',
+    )
     substitution_fee = models.DecimalField(max_digits=10, decimal_places=2, default=500)
     cancellation_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     payment_refund_date = models.DateField(          # ✅ NEW

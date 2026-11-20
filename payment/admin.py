@@ -1,9 +1,37 @@
 from django.contrib import admin
+from django import forms
+from django.db import transaction
 from pathlib import PurePosixPath
 from django.utils.html import format_html
 from .models import *
 from yatra.admin_utils import ActiveYatraAdminMixin
 from userProfile.admin_utils import format_profile_name
+
+
+class PaymentAccountAdminForm(forms.ModelForm):
+    class Meta:
+        model = PaymentAccount
+        fields = '__all__'
+
+    def _get_validation_exclusions(self):
+        exclusions = super()._get_validation_exclusions()
+        if self.cleaned_data.get('is_global'):
+            # The old global flag is cleared atomically when this form saves.
+            exclusions.add('is_global')
+        return exclusions
+
+
+@admin.register(PaymentAccount)
+class PaymentAccountAdmin(admin.ModelAdmin):
+    form = PaymentAccountAdminForm
+    list_display = ('account_name', 'account_number', 'ifsc', 'bank_name', 'upi_id', 'is_global')
+    fieldsets = ((None, {'fields': ('account_name', 'account_number', 'ifsc', 'bank_name', 'upi_id', 'is_global')}),)
+
+    def save_model(self, request, obj, form, change):
+        with transaction.atomic():
+            if obj.is_global:
+                PaymentAccount.objects.filter(is_global=True).exclude(pk=obj.pk).update(is_global=False)
+            super().save_model(request, obj, form, change)
 
 
 def _proof_preview(proof):
@@ -54,6 +82,7 @@ class PaymentAdmin(ActiveYatraAdminMixin, admin.ModelAdmin):
     list_display = (
         'transaction_id', 
         'total_amount', 
+        'payment_account_display',
         'proof_preview',
         'uploaded_by_display',
         'status',
@@ -65,12 +94,19 @@ class PaymentAdmin(ActiveYatraAdminMixin, admin.ModelAdmin):
     list_filter = ('uploaded_at', 'processed_at', 'status')
     search_fields = ('transaction_id', 'uploaded_by__first_name', 'uploaded_by__last_name', 'uploaded_by__initiated_name')
     list_select_related = ('uploaded_by',)
-    readonly_fields = ('uploaded_at',)
+    readonly_fields = ('uploaded_at', 'payment_account_snapshot')
     actions = ["approve_selected", "reject_selected","under_review"]
 
     @admin.display(description='Proof')
     def proof_preview(self, obj):
         return _proof_preview(obj.proof)
+
+    @admin.display(description='Account')
+    def payment_account_display(self, obj):
+        details = obj.payment_account_snapshot
+        if not isinstance(details, dict) or not details:
+            return '—'
+        return details.get('account_name') or '—'
 
     @admin.display(description='Uploaded by', ordering='uploaded_by__first_name')
     def uploaded_by_display(self, obj):

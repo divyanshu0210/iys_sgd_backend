@@ -28,6 +28,65 @@ from types import SimpleNamespace
 
 logger = logging.getLogger(__name__)
 
+
+def checkout_account_snapshot(raw_snapshot):
+    """Record the details displayed by the checkout, not bank verification."""
+    if not raw_snapshot:
+        return None
+    if not isinstance(raw_snapshot, str) or len(raw_snapshot) > 3000:
+        raise ValidationError({'payment_account_snapshot': 'Invalid account details.'})
+    try:
+        details = json.loads(raw_snapshot)
+    except ValueError:
+        raise ValidationError({'payment_account_snapshot': 'Invalid account details.'})
+    if not isinstance(details, dict):
+        raise ValidationError({'payment_account_snapshot': 'Invalid account details.'})
+    fields = (
+        ('payment_account_name', 'account_name', 255),
+        ('payment_account_number', 'account_number', 100),
+        ('payment_ifsc', 'ifsc', 20),
+        ('payment_bank_name', 'bank_name', 255),
+        ('payment_upi_id', 'upi_id', 255),
+    )
+    snapshot = {}
+    for key, destination, max_length in fields:
+        value = details.get(key) or ''
+        if not isinstance(value, str) or len(value) > max_length:
+            raise ValidationError({'payment_account_snapshot': 'Invalid account details.'})
+        value = ' '.join(value.split())
+        snapshot[destination] = value
+    account_id = details.get('payment_account_id')
+    if account_id is not None and (isinstance(account_id, bool) or not isinstance(account_id, int) or account_id <= 0):
+        raise ValidationError({'payment_account_snapshot': 'Invalid account details.'})
+    if account_id is not None:
+        snapshot['account_id'] = account_id
+    return snapshot if any(snapshot.values()) else None
+
+
+class PaymentAccountView(APIView):
+    """Public read-only payment details shown before a user pays."""
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+
+    def get(self, request):
+        account = PaymentAccount.objects.filter(is_global=True).first() or PaymentAccount.objects.first()
+        if not account:
+            return Response({
+                "payment_account_name": "",
+                "payment_account_number": "",
+                "payment_ifsc": "",
+                "payment_bank_name": "",
+                "payment_upi_id": "",
+            })
+        return Response({
+            "payment_account_id": account.pk,
+            "payment_account_name": account.account_name,
+            "payment_account_number": account.account_number,
+            "payment_ifsc": account.ifsc,
+            "payment_bank_name": account.bank_name,
+            "payment_upi_id": account.upi_id,
+        })
+
 class BatchPaymentProofView(APIView):
     """
     Creates a Payment entry and links it to multiple YatraRegistrationInstallments.
@@ -97,6 +156,7 @@ class BatchPaymentProofView(APIView):
                     total_amount=total,
                     uploaded_by=actor,
                     proof=screenshot,
+                    payment_account_snapshot=request.account_snapshot,
                 )
         except IntegrityError:
             raise ValidationError({"transaction_id": "This transaction ID has already been used."})
@@ -130,6 +190,7 @@ class AtomicCheckoutView(APIView):
         screenshot = request.FILES.get('screenshot')
         if not screenshot:
             raise ValidationError({'screenshot': 'A payment screenshot is required.'})
+        account_snapshot = checkout_account_snapshot(request.data.get('payment_account_snapshot'))
         try:
             registrations = json.loads(request.data.get('registrations', ''))
             selected = json.loads(request.data.get('registration_installments', ''))
@@ -175,6 +236,7 @@ class AtomicCheckoutView(APIView):
             raise ValidationError(response.data.get('errors') or response.data.get('error') or 'Registration failed.')
         internal.data = payment_data
         internal.FILES = request.FILES
+        internal.account_snapshot = account_snapshot
         response = BatchPaymentProofView().post(internal, yatra_id)
         if response.status_code >= 400:
             raise ValidationError(response.data)
