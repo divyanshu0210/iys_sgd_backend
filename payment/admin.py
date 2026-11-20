@@ -49,16 +49,39 @@ def _proof_preview(proof):
     )
 
 
+class SnapshotAccountNameFilter(admin.SimpleListFilter):
+    title = 'account name'
+    parameter_name = 'snapshot_account'
+
+    def lookups(self, request, model_admin):
+        names = model_admin.get_queryset(request).order_by().values_list(
+            'payment_account_snapshot__account_name', flat=True
+        ).distinct()
+        names = sorted(name for name in names if isinstance(name, str) and name)
+        return [(f'name:{name}', name) for name in names]
+
+    def queryset(self, request, queryset):
+        value = self.value()
+        if value and value.startswith('name:'):
+            return queryset.filter(payment_account_snapshot__account_name=value[5:])
+        return queryset
+
+
 @admin.register(Donation)
 class DonationAdmin(admin.ModelAdmin):
     class Media:
         css = {'all': ('payment/css/proof_preview.css',)}
 
-    list_display = ("transaction_id", "amount", "proof_preview", "donor_name", "email", "status", "created_at")
-    list_filter = ("status", "created_at")
+    list_display = ("transaction_id", "amount", "payment_account_display", "proof_preview", "donor_name", "email", "status", "created_at")
+    list_filter = (SnapshotAccountNameFilter, "status", "created_at")
     search_fields = ("donor_name", "email", "mobile", "transaction_id")
-    readonly_fields = ("created_at",)
+    readonly_fields = ("created_at", "payment_account_snapshot")
     ordering = ("-created_at",)
+
+    @admin.display(description='Account')
+    def payment_account_display(self, obj):
+        details = obj.payment_account_snapshot
+        return details.get('account_name') or '—' if isinstance(details, dict) else '—'
 
     @admin.display(description='Proof')
     def proof_preview(self, obj):
@@ -91,9 +114,10 @@ class PaymentAdmin(ActiveYatraAdminMixin, admin.ModelAdmin):
         # 'is_verified',
         # 'verified_at'
     )
-    list_filter = ('uploaded_at', 'processed_at', 'status')
+    list_filter = (SnapshotAccountNameFilter, 'uploaded_at', 'processed_at', 'status')
     search_fields = ('transaction_id', 'uploaded_by__first_name', 'uploaded_by__last_name', 'uploaded_by__initiated_name')
     list_select_related = ('uploaded_by',)
+    ordering = ('-uploaded_at',)
     readonly_fields = ('uploaded_at', 'payment_account_snapshot')
     actions = ["approve_selected", "reject_selected","under_review"]
 

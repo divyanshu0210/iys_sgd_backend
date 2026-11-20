@@ -1,4 +1,5 @@
 import base64
+import json
 import tempfile
 from decimal import Decimal
 
@@ -41,6 +42,21 @@ class DonationSubmitTests(TestCase):
         self.assertEqual(donation.status, "under_review")
         self.assertTrue(donation.screenshot.storage.exists(donation.screenshot.name))
         self.assertNotIn("email", response.data)
+        self.assertIsNone(donation.payment_account_snapshot)
+
+    def test_saves_account_snapshot(self):
+        account = {"payment_account_id": 4, "payment_account_name": "Donation Fund", "payment_upi_id": "fund@example"}
+        response = self.client.post("/payments/donations/", {**self.data, "screenshot": self.screenshot(), "payment_account_snapshot": json.dumps(account)}, format="multipart")
+        self.assertEqual(response.status_code, 201)
+        snapshot = Donation.objects.get(pk=response.data["id"]).payment_account_snapshot
+        self.assertEqual(snapshot['account_id'], 4)
+        self.assertEqual(snapshot['account_name'], 'Donation Fund')
+        self.assertEqual(snapshot['upi_id'], 'fund@example')
+
+    def test_invalid_account_snapshot_is_rejected(self):
+        response = self.client.post("/payments/donations/", {**self.data, "screenshot": self.screenshot(), "payment_account_snapshot": '{invalid'}, format="multipart")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(Donation.objects.count(), 0)
 
     def test_duplicate_transaction_is_rejected(self):
         self.client.post("/payments/donations/", {**self.data, "screenshot": self.screenshot()}, format="multipart")

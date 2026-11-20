@@ -9,6 +9,7 @@ from rest_framework.throttling import AnonRateThrottle
 from rest_framework.views import APIView
 
 from .models import Donation, Payment
+from .views import checkout_account_snapshot
 
 
 class DonationSerializer(serializers.ModelSerializer):
@@ -46,10 +47,11 @@ class DonationSubmitView(APIView):
     throttle_classes = [DonationThrottle]
 
     def post(self, request):
+        account_snapshot = checkout_account_snapshot(request.data.get('payment_account_snapshot'))
         serializer = DonationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
-            donation = serializer.save()
+            donation = serializer.save(payment_account_snapshot=account_snapshot)
         except IntegrityError:
             return Response({"transaction_id": ["This transaction ID has already been submitted."]},
                             status=status.HTTP_400_BAD_REQUEST)

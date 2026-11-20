@@ -14,7 +14,10 @@ class DonationAdminDisplayTests(SimpleTestCase):
 
         donation_admin = DonationAdmin(Donation, admin.site)
         payment_admin = PaymentAdmin(Payment, admin.site)
-        self.assertEqual(donation_admin.list_display[:4], ('transaction_id', 'amount', 'proof_preview', 'donor_name'))
+        self.assertEqual(donation_admin.list_display[:5], ('transaction_id', 'amount', 'payment_account_display', 'proof_preview', 'donor_name'))
+        self.assertEqual(donation_admin.payment_account_display(SimpleNamespace(payment_account_snapshot={'account_name': 'Donation Fund'})), 'Donation Fund')
+        self.assertEqual(donation_admin.payment_account_display(SimpleNamespace(payment_account_snapshot=None)), '—')
+        self.assertIn('payment_account_snapshot', donation_admin.readonly_fields)
         proof = SimpleNamespace(name='donation_proofs/example.png', url='https://example.com/example.png')
         donation_preview = donation_admin.proof_preview(SimpleNamespace(screenshot=proof))
         self.assertEqual(donation_preview, payment_admin.proof_preview(SimpleNamespace(proof=proof)))

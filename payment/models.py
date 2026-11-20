@@ -51,6 +51,7 @@ class Donation(models.Model):
     email = models.EmailField()
     transaction_id = models.CharField(max_length=100, unique=True)
     screenshot = models.ImageField(upload_to="donation_proofs/")
+    payment_account_snapshot = models.JSONField(null=True, blank=True, editable=False)
     status = models.CharField(
         max_length=20,
         choices=[("under_review", "Under review"), ("verified", "Verified"), ("rejected", "Rejected")],
