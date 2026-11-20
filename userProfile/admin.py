@@ -4,13 +4,14 @@ from .models import *
 from django.contrib import admin
 from django.utils.timezone import localtime
 from django.utils.html import format_html, format_html_join
-from django.db.models import Prefetch, Max, Q
+from django.db.models import Exists, Prefetch, Max, Q
 from django.db.models import OuterRef, Subquery, BooleanField, DateTimeField
 from django import forms
 from html import unescape
 from uuid import UUID
 from django.utils.html import strip_tags
 from yatra_registration.models import YatraRegistration
+from yatra.models import Yatra
 
 
 class BaceAdminForm(forms.ModelForm):
@@ -83,6 +84,47 @@ class BaceAdmin(admin.ModelAdmin):
         return format_html_join(', ', '{}', ((format_profile_name(mentor, inline=True),) for mentor in mentors))
 
 
+class ProfileYatraFilter(admin.SimpleListFilter):
+    title = 'Yatra'
+    parameter_name = 'yatras'
+    template = 'admin/profile_yatra_filter.html'
+
+    def lookups(self, request, model_admin):
+        return [(str(pk), title) for pk, title in Yatra.objects.order_by('title', 'pk').values_list('pk', 'title')]
+
+    def queryset(self, request, queryset):
+        if not self.value():
+            return queryset
+        try:
+            yatra_ids = [UUID(value) for value in self.value().split(',')]
+        except (ValueError, TypeError, AttributeError):
+            return queryset.none()
+        for yatra_id in set(yatra_ids):
+            registration = YatraRegistration.objects.filter(
+                registered_for_id=OuterRef('pk'), yatra_id=yatra_id,
+            )
+            queryset = queryset.filter(Exists(registration))
+        return queryset
+
+    def choices(self, changelist):
+        selected = set((self.value() or '').split(',')) - {''}
+        yield {
+            'selected': not selected,
+            'query_string': changelist.get_query_string({self.parameter_name: None, 'p': None}),
+            'display': 'All Yatras',
+            'is_clear': True,
+        }
+        for pk, title in self.lookup_choices:
+            next_selected = selected ^ {pk}
+            yield {
+                'selected': pk in selected,
+                'query_string': changelist.get_query_string(
+                    {self.parameter_name: ','.join(sorted(next_selected)) or None, 'p': None},
+                ),
+                'display': title,
+            }
+
+
 class ProfileMentorFilter(admin.SimpleListFilter):
     title = 'Mentor'
     parameter_name = 'assigned_mentor'
@@ -138,6 +180,7 @@ class ProfileAdmin(admin.ModelAdmin):
     )
 
     list_filter = (
+        ProfileYatraFilter,
         ProfileMentorFilter,
         'user_type',
         'gender',

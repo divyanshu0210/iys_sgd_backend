@@ -1,0 +1,15 @@
+{% load i18n %}
+<details data-filter-title="{{ title }}" open>
+  <summary>{% blocktranslate with filter_title=title %} By {{ filter_title }} {% endblocktranslate %}</summary>
+  <ul>
+    {% for choice in choices %}
+      <li{% if choice.selected %} class="selected"{% endif %}>
+        {% if choice.is_clear %}
+          <a href="{{ choice.query_string|iriencode }}">{{ choice.display }}</a>
+        {% else %}
+          <a href="{{ choice.query_string|iriencode }}" role="checkbox" aria-checked="{% if choice.selected %}true{% else %}false{% endif %}">{% if choice.selected %}☑{% else %}☐{% endif %} {{ choice.display }}</a>
+        {% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+</details>

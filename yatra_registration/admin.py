@@ -9,7 +9,8 @@ from django import forms
 from django.contrib import admin
 from django.urls import reverse
 from django.utils.html import format_html, format_html_join
-from django.db.models import Prefetch
+from django.db.models import OuterRef, Prefetch, Q, Subquery
+from userProfile.models import Bace
 from django.contrib.admin import SimpleListFilter
 from yatra.admin_utils import ActiveYatraAdminMixin
 
@@ -26,6 +27,29 @@ class YatraListFilter(SimpleListFilter):
         if self.value():
             return queryset.filter(yatra_id=self.value())
         return queryset
+
+
+class RegistrationBaceFilter(SimpleListFilter):
+    title = 'Bace'
+    parameter_name = 'bace'
+
+    def lookups(self, request, model_admin):
+        return Bace.objects.order_by('name').values_list('pk', 'name')
+
+    def queryset(self, request, queryset):
+        if not self.value():
+            return queryset
+        try:
+            bace = Bace.objects.filter(pk=self.value()).first()
+        except (TypeError, ValueError):
+            return queryset.none()
+        if not bace:
+            return queryset.none()
+        if bace.name.casefold() == 'others':
+            return queryset.exclude(registered_for__center__isnull=True).exclude(
+                registered_for__center='',
+            ).filter(Q(_registered_for_bace__isnull=True) | Q(registered_for__center__iexact='Others'))
+        return queryset.filter(registered_for__center__iexact=bace.name)
     
 
 class RCSDownloadedFilter(SimpleListFilter):
@@ -173,6 +197,8 @@ class YatraRegistrationAdmin(ActiveYatraAdminMixin, admin.ModelAdmin):
         'registered_for_display',
         'yatra',
         'registered_by_display',
+        'registered_for_bace',
+        'registered_for_mobile',
         'mentor_full_name',
         'registration_status',
         'registration_phase',
@@ -196,7 +222,7 @@ class YatraRegistrationAdmin(ActiveYatraAdminMixin, admin.ModelAdmin):
         'phase__name',
     )
     list_filter = (
-        YatraListFilter,'status', 'registered_at',RCSDownloadedFilter,)
+        YatraListFilter, RegistrationBaceFilter, 'status', 'registered_at', RCSDownloadedFilter,)
     ordering = ('-registered_at',)
     # list_per_page = 25            
     # show_full_result_count = False
@@ -217,6 +243,17 @@ class YatraRegistrationAdmin(ActiveYatraAdminMixin, admin.ModelAdmin):
     @admin.display(description='Registered by', ordering='registered_by__first_name')
     def registered_by_display(self, obj):
         return format_profile_name(obj.registered_by)
+
+    @admin.display(description='Bace', ordering='registered_for__center', empty_value='—')
+    def registered_for_bace(self, obj):
+        center = obj.registered_for.center
+        if center and center != 'Others':
+            return obj._registered_for_bace or f'Others ({center})'
+        return center or None
+
+    @admin.display(description='Mobile no.', ordering='registered_for__mobile', empty_value='—')
+    def registered_for_mobile(self, obj):
+        return obj.registered_for.mobile or None
 
     @admin.display(description="Phase", ordering='phase__name')
     def registration_phase(self, obj):
@@ -505,6 +542,11 @@ class YatraRegistrationAdmin(ActiveYatraAdminMixin, admin.ModelAdmin):
         # Apply the active/all Yatra toggle before adding the admin
         # select_related/prefetch_related optimizations below.
         qs = ActiveYatraAdminMixin.get_queryset(self, request)
+
+        direct_bace = Bace.objects.filter(
+            name__iexact=OuterRef('registered_for__center'),
+        ).order_by('pk').values('name')[:1]
+        qs = qs.annotate(_registered_for_bace=Subquery(direct_bace))
 
         return qs.select_related(
             'yatra',
