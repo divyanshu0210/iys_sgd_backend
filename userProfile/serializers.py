@@ -192,6 +192,7 @@ class ProfileFastSerializer(serializers.ModelSerializer):
             'full_name',
             'dob',
             'gender',
+            'marital_status',
             'mobile',
             'email',
             'center',

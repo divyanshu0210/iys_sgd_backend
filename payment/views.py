@@ -25,6 +25,7 @@ from payment.notifications import notify_payment_submitted
 from yatra_registration.payment_rules import payment_block_reason
 import json
 from types import SimpleNamespace
+from uuid import UUID
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +119,8 @@ class BatchPaymentProofView(APIView):
             )
             if registration.status in {"cancelled", "refunded", "substituted", "attended"}:
                 raise ValidationError("Payment cannot be submitted for this registration.")
+            if registration.is_complimentary:
+                raise ValidationError("Payment is not required for a complimentary registration.")
             for label in item["installments"]:
                 key = (registration.pk, label)
                 if key in seen:
@@ -187,17 +190,35 @@ class AtomicCheckoutView(APIView):
     def post(self, request, yatra_id):
         from yatra_registration.views import YatraRegistrationView
 
+        try:
+            registrations = json.loads(request.data.get('registrations', ''))
+            selected = json.loads(request.data.get('registration_installments', ''))
+            complimentary = json.loads(request.data.get('complimentary_profile_ids', '[]'))
+        except (TypeError, ValueError):
+            raise ValidationError('Invalid registration or installment data.')
+        if not isinstance(registrations, dict) or not isinstance(selected, list) or not isinstance(complimentary, list):
+            raise ValidationError('Invalid registration data.')
+        try:
+            complimentary_ids = [str(UUID(str(pid))) for pid in complimentary]
+        except (ValueError, TypeError, AttributeError):
+            raise ValidationError('Invalid complimentary profile IDs.')
+        if len(complimentary_ids) != len(set(complimentary_ids)) or any(pid not in registrations for pid in complimentary_ids):
+            raise ValidationError('Each complimentary guest must have matching registration details.')
+        if complimentary_ids and not request.user.is_superuser:
+            raise PermissionDenied('Only superusers can register temple brahmacharis without payment.')
+        if not selected and not complimentary_ids:
+            raise ValidationError('Select at least one registration.')
+        if not selected:
+            internal = SimpleNamespace(user=request.user, data={pid: registrations[pid] for pid in complimentary_ids},
+                                       _atomic_checkout=True, _complimentary_ids=set(complimentary_ids))
+            response = YatraRegistrationView().post(internal, yatra_id)
+            if response.status_code >= 400 or response.data.get('errors'):
+                raise ValidationError(response.data.get('errors') or response.data.get('error') or 'Registration failed.')
+            return Response({'message': 'Registrations confirmed successfully.'}, status=201)
         screenshot = request.FILES.get('screenshot')
         if not screenshot:
             raise ValidationError({'screenshot': 'A payment screenshot is required.'})
         account_snapshot = checkout_account_snapshot(request.data.get('payment_account_snapshot'))
-        try:
-            registrations = json.loads(request.data.get('registrations', ''))
-            selected = json.loads(request.data.get('registration_installments', ''))
-        except (TypeError, ValueError):
-            raise ValidationError('Invalid registration or installment data.')
-        if not isinstance(registrations, dict):
-            raise ValidationError('Invalid registration data.')
         payment_data = {
             'transaction_id': request.data.get('transaction_id'),
             'total_amount': request.data.get('total_amount'),
@@ -207,13 +228,13 @@ class AtomicCheckoutView(APIView):
         serializer.is_valid(raise_exception=True)
         items = serializer.validated_data['registration_installments']
         profile_ids = [str(item['profile_id']) for item in items]
-        if len(profile_ids) != len(set(profile_ids)) or any(pid not in registrations for pid in profile_ids):
+        if len(profile_ids) != len(set(profile_ids)) or any(pid not in registrations for pid in profile_ids) or set(profile_ids) & set(complimentary_ids):
             raise ValidationError('Each payment must have matching registration details.')
         for pid in profile_ids:
             profile = get_object_or_404(Profile, pk=pid)
             if not can_access_profile(request.user.profile, profile):
                 raise PermissionDenied('You cannot submit payment for this profile.')
-        payload = {pid: registrations[pid] for pid in profile_ids}
+        payload = {pid: registrations[pid] for pid in profile_ids + complimentary_ids}
         for item in items:
             registration = payload[str(item['profile_id'])]
             if not isinstance(registration, dict):
@@ -228,9 +249,13 @@ class AtomicCheckoutView(APIView):
             previous = list(existing.installments.select_related('registration', 'installment'))
             actual = {(str(inst.registration.registered_for_id), inst.installment.label) for inst in previous if inst.installment and inst.registration.yatra_id == yatra_id}
             if len(expected) == sum(len(item['installments']) for item in items) == len(previous) and expected == actual:
+                if complimentary_ids:
+                    matched = YatraRegistration.objects.filter(yatra_id=yatra_id, registered_for_id__in=complimentary_ids, registered_by=request.user.profile, is_complimentary=True).count()
+                    if matched != len(complimentary_ids):
+                        raise ValidationError('This payment was already submitted with different registration details.')
                 return Response({'payment_id': str(existing.pk), 'message': 'Payment proof was already submitted.'}, status=200)
 
-        internal = SimpleNamespace(user=request.user, data=payload, _atomic_checkout=True)
+        internal = SimpleNamespace(user=request.user, data=payload, _atomic_checkout=True, _complimentary_ids=set(complimentary_ids))
         response = YatraRegistrationView().post(internal, yatra_id)
         if response.status_code >= 400 or response.data.get('errors'):
             raise ValidationError(response.data.get('errors') or response.data.get('error') or 'Registration failed.')

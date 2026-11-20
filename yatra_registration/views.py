@@ -43,6 +43,8 @@ def active_registration_phase(yatra, on_date=None):
 
 def phase_for_registration(yatra, registration=None):
     """Keep an existing registration on its original phase forever."""
+    if registration and registration.is_complimentary:
+        return registration.phase
     if registration and registration.phase_id:
         has_phase_installment = registration.installments.filter(
             Q(is_paid=True) | (Q(payment__isnull=False) & ~Q(payment__proof='')),
@@ -466,6 +468,8 @@ class YatraRegistrationView(APIView):
                 # =====================================================
                 mentees = list(profiles_for_reviewer(user_profile))
                 profile_ids = list(mentees)
+                if request.user.is_superuser:
+                    profile_ids.extend(YatraRegistration.objects.filter(yatra=yatra, registered_by=user_profile, is_complimentary=True).values_list('registered_for_id', flat=True))
 
                 # =====================================================
                 # POLICY CHECK
@@ -606,17 +610,17 @@ class YatraRegistrationView(APIView):
                         paid, pending = [], []
                         # A stale record from another phase must not appear in
                         # this phase's paid/pending lists.
-                        for inst in profile_installments:
+                        for inst in ([] if registration.is_complimentary else profile_installments):
                             record = inst_map.get(inst.id)
                             if record:
                                 (paid if record.is_paid else pending).append(inst.label)
 
-                        for inst in profile_installments:
+                        for inst in ([] if registration.is_complimentary else profile_installments):
                             if inst.label not in paid and inst.label not in pending:
                                 pending.append(inst.label)
 
                         installments_info = []
-                        for inst in profile_installments:
+                        for inst in ([] if registration.is_complimentary else profile_installments):
                             ri = inst_map.get(inst.id)
                             tag = calculate_installment_tag(ri) if ri else "due"
 
@@ -633,6 +637,7 @@ class YatraRegistrationView(APIView):
                             'is_registered': True,
                             'registration_id': str(registration.id),
                             'registration_status': registration.status,
+                            'is_complimentary': registration.is_complimentary,
                             'form_data': registration.form_data,
                             # 'paid_amount': float(registration.paid_amount),
                             # 'pending_amount': float(registration.pending_amount),
@@ -714,6 +719,7 @@ class YatraRegistrationView(APIView):
                 response_data = {
                     "yatra": yatra_data,
                     "profiles": list(profile_map.values()),
+                    "can_register_complimentary": request.user.is_superuser,
                 }
                 return Response(response_data)
 
@@ -777,6 +783,9 @@ class YatraRegistrationView(APIView):
                 .first()
             )
             registration_phase = phase_for_registration(yatra, existing_registration)
+            if existing_registration and existing_registration.is_complimentary:
+                errors.append('Complimentary registrations are managed by an administrator.')
+                continue
             started = bool(existing_registration and existing_registration.installments.filter(Q(is_paid=True) | (Q(payment__isnull=False) & ~Q(payment__proof=''))).exists())
             if not started:
                 if not yatra.is_registration_open or yatra.close_yatra:
@@ -802,6 +811,24 @@ class YatraRegistrationView(APIView):
             # --- Eligibility check (skipped when requires_approval=False) ---
             if requires_approval and not self._check_eligibility(yatra, profile, registrant):
                 errors.append(f'{profile} is not eligible for registration')
+                continue
+
+            if str(profile.pk) in getattr(request, '_complimentary_ids', set()):
+                if not request.user.is_superuser or profile.marital_status != 'brahmachari_temple':
+                    errors.append('Only superusers can register temple brahmacharis without payment.')
+                    continue
+                if existing_registration:
+                    errors.append(f'{profile} already has a registration; it cannot be converted to complimentary.')
+                    continue
+                if not isinstance(reg_data, dict) or not isinstance(reg_data.get('form_fields', {}), dict):
+                    errors.append('Invalid registration details.')
+                    continue
+                registration = YatraRegistration.objects.create(
+                    yatra=yatra, registered_for=profile, registered_by=registrant,
+                    phase=registration_phase, form_data=reg_data.get('form_fields', {}),
+                    status='paid', is_complimentary=True,
+                )
+                created_or_updated.append(registration)
                 continue
 
             # --- Extract fields ---
@@ -942,6 +969,8 @@ class YatraRegistrationView(APIView):
             )
         except YatraRegistration.DoesNotExist:
             return Response({"error": "Registration not found"}, status=404)
+        if registration.is_complimentary:
+            return Response({"error": "Complimentary registrations are managed by an administrator."}, status=403)
         
         if registration.status == "attended":
             return Response(

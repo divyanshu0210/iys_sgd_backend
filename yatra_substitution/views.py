@@ -46,6 +46,8 @@ def target_is_approved(yatra, profile):
 def create_substitution_request(request, reg_id):
     user_profile = request.user.profile
     reg = get_object_or_404(YatraRegistration.objects.select_for_update().select_related("yatra"), id=reg_id)
+    if reg.is_complimentary:
+        return Response({"detail": "Complimentary registrations are managed by an administrator."}, status=403)
     if reg.registered_for != user_profile:
         return Response({"detail": "Only the registrant can initiate substitution."}, status=403)
 

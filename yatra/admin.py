@@ -166,7 +166,7 @@ class YatraAdmin(nested_admin.NestedModelAdmin):
         started_registrations = (
             YatraRegistration.objects.filter(yatra_id=OuterRef('pk'))
             .exclude(status__in=['cancelled', 'refunded'])
-            .filter(Q(status='substituted') | Exists(started_installments))
+            .filter(Q(status='substituted') | Q(is_complimentary=True) | Exists(started_installments))
             .order_by()
             .values('yatra_id')
             .annotate(total=Count('pk'))
@@ -176,7 +176,7 @@ class YatraAdmin(nested_admin.NestedModelAdmin):
             YatraRegistration.objects.filter(
                 yatra_id=OuterRef('pk'), status__in=['cancelled', 'refunded'],
             )
-            .filter(Exists(started_installments))
+            .filter(Q(is_complimentary=True) | Exists(started_installments))
             .order_by()
             .values('yatra_id')
             .annotate(total=Count('pk'))

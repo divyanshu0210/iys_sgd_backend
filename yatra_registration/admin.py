@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.core.exceptions import PermissionDenied
 from django.contrib.admin import RelatedOnlyFieldListFilter
 from userProfile.admin_utils import export_as_excel, format_profile_name
 from .models import *
@@ -228,6 +229,22 @@ class YatraRegistrationAdmin(ActiveYatraAdminMixin, admin.ModelAdmin):
     # show_full_result_count = False
 
     readonly_fields = ('total_amount_display', 'paid_amount_display', 'installments_status')
+    exclude = ('is_complimentary',)
+
+    def has_change_permission(self, request, obj=None):
+        if obj is not None and obj.is_complimentary and not request.user.is_superuser:
+            return False
+        return super().has_change_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        if obj is not None and obj.is_complimentary and not request.user.is_superuser:
+            return False
+        return super().has_delete_permission(request, obj)
+
+    def delete_queryset(self, request, queryset):
+        if not request.user.is_superuser and queryset.filter(is_complimentary=True).exists():
+            raise PermissionDenied('Only superusers may delete complimentary registrations.')
+        super().delete_queryset(request, queryset)
 
     inlines = [
         RegistrationAccommodationInline,
@@ -305,7 +322,9 @@ class YatraRegistrationAdmin(ActiveYatraAdminMixin, admin.ModelAdmin):
                 'icon': '✓✓'          # double check (completed/attended)
             },
         }
-        config = status_map.get(obj.status, status_map['pending'])
+        config = status_map.get(obj.status, status_map['pending']).copy()
+        if obj.is_complimentary and obj.status == 'paid':
+            config['text'] = 'CONFIRMED (B)'
         
         return format_html(
             '<span style="background:{}; color:{}; padding:5px 12px; border-radius:20px; '
@@ -360,6 +379,8 @@ class YatraRegistrationAdmin(ActiveYatraAdminMixin, admin.ModelAdmin):
         return [inst for inst in installments if inst.phase_id == obj.phase_id]
 
     def total_amount_display(self, obj):
+        if obj.is_complimentary:
+            return '₹0'
         return f"₹{sum(i.amount for i in self._phase_installments(obj))}"
     
     total_amount_display.short_description = "Total Amount"
@@ -373,6 +394,8 @@ class YatraRegistrationAdmin(ActiveYatraAdminMixin, admin.ModelAdmin):
 
     @admin.display(description="Installment Status")
     def installments_status(self, obj):
+        if obj.is_complimentary:
+            return 'No payment required'
         def compute():
             yatra_installments = self._phase_installments(obj)
             records = getattr(obj, '_pref_installments', None)

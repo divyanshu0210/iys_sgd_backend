@@ -39,6 +39,7 @@ class YatraRegistration(models.Model):
         null=True,
         blank=True,
     )
+    is_complimentary = models.BooleanField(default=False, help_text='Payment is waived for this guest registration.')
     status = models.CharField(
         max_length=20, 
         choices=[
@@ -79,6 +80,8 @@ class YatraRegistration(models.Model):
     @property
     def total_amount(self):
         """Total for the registration's phase (or legacy installments)."""
+        if self.is_complimentary:
+            return 0
         installments = (
             self.phase.installments.all()
             if self.phase_id
@@ -113,6 +116,11 @@ class YatraRegistration(models.Model):
 
     def update_status(self):
         """Update registration status based on payments"""
+        if self.is_complimentary:
+            if self.status not in {'cancelled', 'refunded', 'substituted', 'attended'}:
+                self.status = 'paid'
+                self.save(update_fields=['status', 'updated_at'])
+            return
         total_installments = (
             self.phase.installments.count()
             if self.phase_id

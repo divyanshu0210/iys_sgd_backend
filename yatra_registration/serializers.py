@@ -106,6 +106,8 @@ class YatraRegistrationDetailSerializer(serializers.ModelSerializer):
     phase = RegistrationPhaseSummarySerializer(read_only=True)
 
     def get_installments(self, obj):
+        if obj.is_complimentary:
+            return []
         records = obj.installments.filter(installment__phase_id=obj.phase_id, installment__yatra_id=obj.yatra_id).select_related('installment', 'payment').order_by('installment__order', 'installment__id')
         return InstallmentSerializer(records, many=True, context=self.context).data
 
@@ -117,6 +119,7 @@ class YatraRegistrationDetailSerializer(serializers.ModelSerializer):
             'registered_for',
             'form_data',
             'status',
+            'is_complimentary',
             'registered_at',
             'updated_at',
             'installments',
